@@ -1,0 +1,39 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "QTMCP_BUILD_EXAMPLES": "ON"
+      }
+    },
+    {
+      "name": "default",
+      "displayName": "Ninja Multi-Config",
+      "description": "Qt 路径取自环境（CMAKE_PREFIX_PATH）。本机覆盖请用 CMakeUserPresets.json 里的 local preset。",
+      "inherits": "base"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "configurePreset": "default",
+      "configuration": "Debug"
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "configurePreset": "default",
+      "configuration": "Release"
+    }
+  ]
+}

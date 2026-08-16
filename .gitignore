@@ -1,0 +1,16 @@
+# Build output
+build/
+
+# Machine-specific local overrides (Qt paths etc.)
+CMakeUserPresets.json
+
+# Python client: virtualenv and generated test artifacts
+client/.venv/
+client/shots/
+client/scratch/
+__pycache__/
+*.pyc
+
+# Third-party reference project (qt-mcp, Python/PySide6) — kept locally as the
+# design blueprint, not part of this codebase
+qt-mcp/
