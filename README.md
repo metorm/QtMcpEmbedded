@@ -18,6 +18,12 @@ add_subdirectory(third_party/QtMcpEmbedded)   # 作为子项目时不会构建�
 target_link_libraries(your_app PRIVATE QtMcpEmbedded)
 ```
 
+qmake 项目则在 `.pro` 里加一行：
+
+```qmake
+include(third_party/QtMcpEmbedded/qtmcp_embedded.pri)
+```
+
 ```cpp
 #include <QtMcp.h>
 
