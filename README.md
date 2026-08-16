@@ -77,10 +77,18 @@ QtMcp::install(opts);
 
 需要 CMake（presets v6+）、Ninja、Qt 5.15+ 或 Qt 6。
 
+首次构建先创建本机 preset：复制 `CMakeUserPresets.json.template` 为
+`CMakeUserPresets.json`（该文件已被 .gitignore 排除，不会入库），把里面的
+`CMAKE_PREFIX_PATH` 改成你机器上的 Qt 路径（示例值是 Qt 5.15.2 MSVC64），然后：
+
 ```bash
-cmake --preset default            # 或自行在 CMakeUserPresets.json 里配 local preset 指定 Qt 路径
-cmake --build --preset debug      # Ninja Multi-Config：debug / release
+cmake --preset local              # 首次 configure
+cmake --build --preset local-debug    # 或 local-release
 ```
+
+如果 Qt 已在环境变量里（如 `CMAKE_PREFIX_PATH` 已设置），也可以直接用项目自带的
+`default` preset（`cmake --preset default`，构建 preset 为 `debug` / `release`）。
+两种 preset 都是 Ninja Multi-Config，产物在 `build/` 下按配置分目录。
 
 `examples/demo_app` 构建后自动执行 windeployqt（含 offscreen 插件），exe 可直接双击运行。
 

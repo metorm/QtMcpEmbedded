@@ -1,0 +1,28 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "local",
+      "displayName": "本机配置（示例：MSVC + Qt 5.15.2）",
+      "description": "使用方式：复制本文件为 CMakeUserPresets.json（该文件已被 .gitignore 排除），然后把 CMAKE_PREFIX_PATH 改成你机器上的 Qt 安装路径，再执行 cmake --preset local。",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "C:/devlibs/Qt/5.15.2/msvc2019_64"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "local-debug",
+      "displayName": "本机 Debug",
+      "configurePreset": "local",
+      "configuration": "Debug"
+    },
+    {
+      "name": "local-release",
+      "displayName": "本机 Release",
+      "configurePreset": "local",
+      "configuration": "Release"
+    }
+  ]
+}
