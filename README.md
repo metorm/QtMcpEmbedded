@@ -11,7 +11,10 @@
 
 ### 接入你的应用
 
+以 `add_subdirectory` 方式接入（clone 或 git submodule 放进项目树均可）：
+
 ```cmake
+add_subdirectory(third_party/QtMcpEmbedded)   # 作为子项目时不会构建本仓库的 examples
 target_link_libraries(your_app PRIVATE QtMcpEmbedded)
 ```
 

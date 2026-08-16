@@ -1,7 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
 project(QtMcpEmbedded VERSION 0.1.0 LANGUAGES CXX)
 
-option(QTMCP_BUILD_EXAMPLES "Build example applications" ON)
+# Examples default ON only when this repo is the top-level project; as an
+# add_subdirectory() subproject they stay out of the consumer's build.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(_qtmcp_examples_default ON)
+else()
+    set(_qtmcp_examples_default OFF)
+endif()
+option(QTMCP_BUILD_EXAMPLES "Build example applications" ${_qtmcp_examples_default})
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
