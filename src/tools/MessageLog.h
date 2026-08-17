@@ -7,13 +7,20 @@
 
 #include <deque>
 
+// Build-time knob (CMake -DQTMCP_MESSAGE_LOG_CAPACITY=N / qmake
+// QTMCP_MESSAGE_LOG_CAPACITY=N): capacity of the Qt message ring buffer.
+#ifndef QTMCP_MESSAGE_LOG_CAPACITY
+#define QTMCP_MESSAGE_LOG_CAPACITY 500
+#endif
+
 namespace QtMcp {
 
 class ToolRegistry;
 
 /// Captures Qt debug/warning messages via qInstallMessageHandler into a ring
-/// buffer (max 500 entries). qt_messages reads at/above a severity level and
-/// clears the buffer, matching qt-mcp behavior.
+/// buffer (capacity QTMCP_MESSAGE_LOG_CAPACITY, default 500).
+/// qt_debug_message reads at/above a severity level and clears the buffer,
+/// matching qt-mcp behavior.
 class MessageLog
 {
 public:
@@ -42,7 +49,7 @@ private:
                                const QString &message);
     void append(const QString &level, const QString &message);
 
-    static const int MAX_ENTRIES = 500;
+    static const int MAX_ENTRIES = QTMCP_MESSAGE_LOG_CAPACITY;
 
     std::deque<Entry> m_buffer;
     QMutex m_mutex;

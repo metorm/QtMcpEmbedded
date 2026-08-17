@@ -236,8 +236,8 @@ async def run_suite(session: ClientSession, app: str) -> None:
             "property_name": "visible", "value": True, "timeout_ms": 2000})
         check("qt_wait_for", ok, str(payload)[:120])
 
-    ok, payload = await call_soft(session, "qt_messages", {})
-    check("qt_messages", ok, f"count={payload.get('count') if isinstance(payload, dict) else '?'}")
+    ok, payload = await call_soft(session, "qt_debug_message", {})
+    check("qt_debug_message", ok, f"count={payload.get('count') if isinstance(payload, dict) else '?'}")
 
     shot = await call(session, "qt_screenshot", {"full_window": True})
     await save_shot(shot, f"ads_{app}_04_final.png")

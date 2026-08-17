@@ -6,6 +6,7 @@
 #include <QDial>
 #include <QDialog>
 #include <QDoubleSpinBox>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -145,6 +146,7 @@ int main(int argc, char *argv[])
         "listDetailLabel; itemTable cells sum into sumLabel. Quitting with unsaved "
         "changes asks Save/Discard/Cancel.");
     QtMcp::install(mcpOptions);
+    QtMcp::postMessage(QStringLiteral("demo_app started"));
 
     DemoMainWindow window;
     window.setObjectName(QStringLiteral("MainWindow"));
@@ -167,6 +169,7 @@ int main(int argc, char *argv[])
     QObject::connect(applyButton, &QPushButton::clicked, statusLabel, [statusLabel, &window]() {
         statusLabel->setText(QStringLiteral("Applied"));
         window.setDirty(false); // applying saves
+        QtMcp::postMessage(QStringLiteral("applyButton clicked, statusLabel := Applied"));
     });
 
     auto *nameEdit = new QLineEdit;
@@ -305,6 +308,26 @@ int main(int argc, char *argv[])
     basicLayout->addWidget(advancedCheck);
     basicLayout->addWidget(advancedGroup);
     basicLayout->addWidget(dialogButton);
+
+    // file & directory dialogs (native suppressed by the probe) — exercise
+    // qt_file_dialog: result path lands in statusLabel
+    auto *fileButton = new QPushButton(QStringLiteral("Open File"));
+    fileButton->setObjectName(QStringLiteral("fileButton"));
+    QObject::connect(fileButton, &QPushButton::clicked, &window, [statusLabel, &window]() {
+        const QString f = QFileDialog::getOpenFileName(&window, QStringLiteral("Pick a file"));
+        statusLabel->setText(f.isEmpty() ? QStringLiteral("file cancelled")
+                                         : QStringLiteral("file: %1").arg(f));
+    });
+    basicLayout->addWidget(fileButton);
+
+    auto *dirButton = new QPushButton(QStringLiteral("Pick Directory"));
+    dirButton->setObjectName(QStringLiteral("dirButton"));
+    QObject::connect(dirButton, &QPushButton::clicked, &window, [statusLabel, &window]() {
+        const QString d = QFileDialog::getExistingDirectory(&window, QStringLiteral("Pick a dir"));
+        statusLabel->setText(d.isEmpty() ? QStringLiteral("dir cancelled")
+                                         : QStringLiteral("dir: %1").arg(d));
+    });
+    basicLayout->addWidget(dirButton);
 
     // warning message box (modal exec) — a classic blocking scenario
     auto *warnButton = new QPushButton(QStringLiteral("Show Warning"));

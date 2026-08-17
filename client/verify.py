@@ -7,7 +7,7 @@ Usage:
 Covers: initialize -> tools/list -> snapshot -> screenshots -> text input ->
 click -> property set -> widget linkages (slider/spin/progress, dial/LCD,
 combo/label, checkbox/group, radio/label, list/label, table sum) -> tab
-switch -> modal dialog -> batch -> qt_messages.
+switch -> modal dialog -> batch -> qt_debug_message.
 Screenshots saved to client/shots/. Exits non-zero on any failed assertion.
 """
 
@@ -190,6 +190,10 @@ async def main() -> int:
                   f"instructions length={len(instructions)}")
             check("instructions note server shutdown on app exit",
                   "shuts down with it" in instructions)
+            check("instructions carry behavioral limits for agents",
+                  "Behavioral limits" in instructions
+                  and "never silently rebound" in instructions
+                  and "event posted" in instructions)
 
             tools = await session.list_tools()
             names = sorted(t.name for t in tools.tools)
@@ -457,6 +461,19 @@ async def main() -> int:
                 check("click list item via snapshot coordinates (viewport redirect)",
                       waited.get("ok") is True, json.dumps(waited)[:100])
 
+            # --- regression: click a model-view item by item_text ---
+            await call(session, "qt_click",
+                       {"ref": list_ref, "item_text": "Apple"})
+            waited = await wait_prop(session, detail_ref, "text", "Selected: Apple")
+            check("click list item via item_text (generic model view)",
+                  waited.get("ok") is True, json.dumps(waited)[:100])
+
+            # --- regression: get_text dumps model-view contents ---
+            lv = parse_json(await call(session, "qt_get_text", {"ref": list_ref}))
+            check("get_text on item view dumps model rows",
+                  all(x in lv.get("text", "") for x in ("Apple", "Banana", "Cherry")),
+                  repr(lv.get("text", ""))[:80])
+
             # --- regression: out-of-bounds click position is rejected ---
             oob = await session.call_tool("qt_click",
                                           {"ref": list_ref, "position": [99999, 99999]})
@@ -665,6 +682,72 @@ async def main() -> int:
             check("dialog closed via posted click", gone.get("count") == 0,
                   json.dumps(gone)[:100])
 
+            # --- regression: refs must not bind to recycled addresses ---
+            # Each dialog open creates a brand-new dialogEdit, often at the same
+            # heap address as the destroyed one. The registry must not hand out
+            # a stale ref for it (that produced "ref not found" on type/click).
+            for i in range(3):
+                await call(session, "qt_click", {"ref": dlg_btn_ref})
+                waited = parse_json(await call(session, "qt_wait_for",
+                                               {"condition": "widget_visible",
+                                                "object_name": "SampleDialog",
+                                                "timeout_ms": 3000}))
+                if waited.get("ok") is not True:
+                    check(f"dialog recycle round {i}: opens", False, json.dumps(waited)[:100])
+                    break
+                edit_ref = await find_ref(session, "dialogEdit")
+                ok = True
+                try:
+                    await call(session, "qt_type_text",
+                               {"ref": edit_ref, "text": f"recycle {i}"})
+                    ok_ref = await find_ref(session, "okButton")
+                    await call(session, "qt_click", {"ref": ok_ref})
+                except RuntimeError as exc:
+                    ok = False
+                    check(f"dialog recycle round {i}: refs stay valid", False, str(exc)[:120])
+                await asyncio.sleep(0.4)
+                gone = parse_json(await call(session, "qt_find_widget",
+                                             {"object_name": "SampleDialog"}))
+                if ok:
+                    check(f"dialog recycle round {i}: refs stay valid",
+                          gone.get("count") == 0, json.dumps(gone)[:100])
+                if gone.get("count") != 0:
+                    break
+
+            # --- qt_file_dialog: non-native file & directory dialogs ---
+            async def await_popup():
+                for _ in range(30):
+                    pop = parse_json(await call(session, "qt_active_popup", {}))
+                    if pop.get("found"):
+                        return pop
+                    await asyncio.sleep(0.1)
+                return {}
+
+            probe_file = Path(__file__).resolve().as_posix()
+            file_btn_ref = await find_ref(session, "fileButton")
+            await call(session, "qt_click", {"ref": file_btn_ref})
+            pop = await await_popup()
+            check("file dialog popup appeared (non-native)",
+                  pop.get("found") is True and pop.get("class") == "QFileDialog",
+                  json.dumps(pop, ensure_ascii=False)[:150])
+            fd = parse_json(await call(session, "qt_file_dialog", {"path": probe_file}))
+            check("qt_file_dialog open-file accepted", fd.get("ok") is True,
+                  json.dumps(fd)[:120])
+            waited = await wait_prop(session, status_ref, "text", f"file: {probe_file}")
+            check("file dialog result reached the app", waited.get("ok") is True,
+                  json.dumps(waited)[:120])
+
+            probe_dir = Path(__file__).resolve().parent.as_posix()
+            dir_btn_ref = await find_ref(session, "dirButton")
+            await call(session, "qt_click", {"ref": dir_btn_ref})
+            await await_popup()
+            fd = parse_json(await call(session, "qt_file_dialog", {"path": probe_dir}))
+            check("qt_file_dialog directory accepted", fd.get("ok") is True,
+                  json.dumps(fd)[:120])
+            waited = await wait_prop(session, status_ref, "text", f"dir: {probe_dir}")
+            check("directory dialog result reached the app", waited.get("ok") is True,
+                  json.dumps(waited)[:120])
+
             # --- batch: read-back ---
             batch = parse_json(await call(session, "qt_batch", {"steps": [
                 {"method": "get_text", "params": {"ref": name_ref}},
@@ -688,9 +771,20 @@ async def main() -> int:
                   timeout_res.is_error and "last seen as" in text_of(timeout_res),
                   text_of(timeout_res)[:150])
 
-            # --- qt_messages ---
-            msgs = parse_json(await call(session, "qt_messages", {"level": "debug"}))
-            check("qt_messages", "messages" in msgs, f"count={msgs.get('count')}")
+            # --- qt_debug_message ---
+            msgs = parse_json(await call(session, "qt_debug_message", {"level": "debug"}))
+            check("qt_debug_message", "messages" in msgs, f"count={msgs.get('count')}")
+
+            # --- qt_host_messages: host-posted channel, read-and-clear ---
+            host_msgs = parse_json(await call(session, "qt_host_messages"))
+            texts = [m.get("message", "") for m in host_msgs.get("messages", [])]
+            check("qt_host_messages delivers posted messages",
+                  any("demo_app started" in t for t in texts)
+                  and any("applyButton clicked" in t for t in texts),
+                  json.dumps(texts)[:200])
+            again = parse_json(await call(session, "qt_host_messages"))
+            check("qt_host_messages cleared after read",
+                  again.get("count") == 0, json.dumps(again)[:100])
 
     exit_save_flow()
 

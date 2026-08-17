@@ -30,6 +30,17 @@ struct InstallOptions {
 bool install();
 bool install(const InstallOptions &options);
 
+/// Post a message to the MCP host log staging area. An AI agent receives
+/// these messages via the `qt_host_messages` tool (read-and-clear), giving the
+/// application a push-style channel to report runtime status without the
+/// agent polling log widgets.
+///
+/// Thread-safe; may be called from any thread. No-op with zero overhead when
+/// the probe is not installed (QT_MCP_PROBE unset) — safe to leave in
+/// production code. Messages posted before install() are dropped.
+/// `level` is free-form, conventionally "debug"/"info"/"warning"/"critical".
+void postMessage(const QString &message, const QString &level = QStringLiteral("info"));
+
 } // namespace QtMcp
 
 #endif // QTMCP_H

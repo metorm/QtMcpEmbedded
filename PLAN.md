@@ -118,7 +118,7 @@ src/
     ├── Introspector.{h,cpp}   // snapshot / object_tree / list_windows / find_widget / widget_details / active_popup / menu_items
     ├── Interactor.{h,cpp}     // click / type_text / key_press / set_property / invoke_slot / wait_for / get_text / trigger_action / batch
     ├── Screenshotter.{h,cpp}  // screenshot（PNG → base64 → MCP image content）
-    ├── MessageLog.{h,cpp}     // qt_messages（qInstallMessageHandler 环形缓冲）
+    ├── MessageLog.{h,cpp}     // qt_debug_message（qInstallMessageHandler 环形缓冲）
     ├── ThreadInspector.{h,cpp}// thread_check
     ├── SignalInspector.{h,cpp}// signals
     ├── LayoutInspector.{h,cpp}// layout_check
@@ -154,7 +154,7 @@ API 对照天然存在，可逐个对照移植与测试。
 | `qt_get_text` | 提取文本内容 | `get_text` |
 | `qt_trigger_action` | 触发 QAction | `trigger_action` |
 | `qt_batch` | 一次调用顺序执行多步 | `batch` |
-| `qt_messages` | 读取并清空 Qt 内部消息缓冲 | `qt_messages` |
+| `qt_debug_message` | 读取并清空 Qt 内部消息缓冲 | `qt_messages` |
 | `qt_thread_check` | 非 GUI 线程操作 widget 的检测 | `thread_check` |
 | `qt_signals` | 信号连接检查 | `signals` |
 | `qt_layout_check` | 布局问题检测 | `layout_check` |

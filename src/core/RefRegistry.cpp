@@ -37,8 +37,23 @@ QString RefRegistry::registerObject(QObject *obj, const QString &prefix)
         return QString();
 
     const auto it = m_reverse.constFind(obj);
-    if (it != m_reverse.constEnd())
-        return it.value();
+    if (it != m_reverse.constEnd()) {
+        // Validate the hit before trusting it. The allocator routinely recycles
+        // the address of a destroyed object for a new one of the same class
+        // (e.g. a freshly opened dialog's children). If the old entry has not
+        // been swept yet, a reverse lookup for the NEW object hits the STALE
+        // mapping. The stored forward QPointer tracks the old object's lifetime
+        // (not the address), so it is null exactly in that case: drop the stale
+        // entry and fall through to register a fresh ref. A non-null QPointer
+        // can only mean the same live object — two distinct live objects never
+        // share an address.
+        const auto fit = m_refs.constFind(it.value());
+        if (fit != m_refs.constEnd() && !fit.value().isNull())
+            return it.value();
+        m_reverse.erase(it);
+        if (fit != m_refs.constEnd())
+            m_refs.erase(fit);
+    }
 
     const QString ref = prefix + QString::number(++m_counter);
     m_refs.insert(ref, QPointer<QObject>(obj));

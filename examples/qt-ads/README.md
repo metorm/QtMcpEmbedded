@@ -63,7 +63,7 @@ QtMcp::install();   // 未设 QT_MCP_PROBE=1 时是零开销 no-op
 
 注意 `demo/main.cpp` 里有一行 `qInstallMessageHandler(myMessageOutput)`:
 `QtMcp::install()` 必须放在它**之后**(MessageLog 会链接到前一个 handler;
-顺序反了 demo 的 handler 会把探针的覆盖掉,`qt_messages` 失效)。
+顺序反了 demo 的 handler 会把探针的覆盖掉,`qt_debug_message` 失效)。
 
 ### 1.3 构建
 

@@ -197,8 +197,8 @@ async def scenario_demo(p: Probe) -> None:
     else:
         info("  no auto-hide pin button visible — skipping autohide flow")
 
-    msgs = await p.j("qt_messages", {})
-    info(f"  qt_messages count={msgs.get('count')}")
+    msgs = await p.j("qt_debug_message", {})
+    info(f"  qt_debug_message count={msgs.get('count')}")
 
 
 # ------------------------------------------------------------- deleteonclose

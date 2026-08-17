@@ -54,9 +54,11 @@ void MessageLog::registerTools(ToolRegistry &registry)
     };
 
     registry.registerTool(
-        QStringLiteral("qt_messages"),
+        QStringLiteral("qt_debug_message"),
         QStringLiteral("Return Qt internal messages (qDebug/qWarning/...) captured since the "
-                       "last call, at or above the given level. The buffer is cleared on read."),
+                       "last call, at or above the given level. The buffer is cleared on read. "
+                       "For messages the host posts itself via QtMcp::postMessage(), "
+                       "use qt_host_messages instead."),
         schema, [](const QJsonObject &args) {
             const QString level = args.value(QStringLiteral("level")).toString(QStringLiteral("info"));
             return ToolResult::fromData(MessageLog::instance().takeMessages(level));

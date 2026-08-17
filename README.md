@@ -44,6 +44,17 @@ opts.instructions = "主流程：先…再…；重要控件：objectName xxx �
 QtMcp::install(opts);
 ```
 
+宿主还可以主动向 agent 推送运行状态（可选，不调用则 `qt_host_messages` 恒为空）：
+
+```cpp
+QtMcp::postMessage("仿真完成，误差 0.3%", "info");  // 任意线程可调用；探针未启用时零开销 no-op
+```
+
+暂存区容量默认 500 条（超出丢最旧并在 `dropped` 计数），构建期可调：
+CMake `-DQTMCP_HOST_LOG_CAPACITY=N`，qmake `QTMCP_HOST_LOG_CAPACITY=N`。
+`qt_debug_message` 的 Qt 内部消息缓冲容量同理，参数为
+`-DQTMCP_MESSAGE_LOG_CAPACITY=N`（默认 500）。
+
 ### 环境变量
 
 | 变量 | 默认 | 说明 |
@@ -60,28 +71,42 @@ QtMcp::install(opts);
 
 注意：宿主程序退出时 MCP server 随之关闭，连接断开属于正常终止。
 
-## 工具一览（18 个）
+## 工具一览（20 个）
 
 | 工具 | 说明 |
 |---|---|
 | `qt_snapshot` | widget 树结构化快照（含 ref、tooltip、勾选/隐藏/禁用标记；内联 list/tree/table 条目及点击坐标） |
 | `qt_find_widget` | 按 objectName/类名/文本/模式查找控件（类名匹配忽略 C++ 命名空间，`CDockWidget` 可命中 `ads::CDockWidget`） |
-| `qt_widget_details` | 控件或 tree 条目的完整属性 |
+| `qt_widget_details` | 控件或 tree 条目的完整属性（含控件挂载的 QAction 列表，可发现 Ribbon 组等容器上可触发的动作） |
 | `qt_object_tree` / `qt_list_windows` | QObject 树 / 顶层窗口（每个窗口带 ref 与标题，可直接用于截图等后续操作） |
 | `qt_active_popup` | 当前模态/弹出窗口（标题、文本、全部按钮的可点击 ref）——处理 messagebox、保存确认等阻塞弹窗的入口 |
 | `qt_screenshot` | 窗口或控件截图（PNG/JPEG，基于真实渲染结果） |
-| `qt_click` | 点击（widget 与 tree item 均可；双击、右键含上下文菜单、修饰键、坐标；QTableWidget 支持 `row`/`col` 直达任意单元格，屏外单元格自动滚入） |
+| `qt_click` | 点击（widget 与 tree item 均可；双击、右键含上下文菜单、修饰键、坐标；`row`/`col` 直达任意 item view（QListView/QTableView/QTreeView/QTableWidget）的单元格，屏外自动滚入；`item_text` 按文本命中条目，树形自动展开） |
+| `qt_file_dialog` | 处理当前活动的 QFileDialog：填路径并确认/取消（打开/保存/选目录均可）。探针 install() 时设置 `Qt::AA_DontUseNativeDialogs`，之后创建的文件对话框都是 Qt 控件形态、可被驱动 |
 | `qt_drag` | 拖拽（源 widget → 目标 widget；路径上移动真实光标以兼容读取 `QCursor::pos()` 的拖拽实现，如 ADS dock 重排） |
 | `qt_type_text` / `qt_key_press` | 文本输入 / 按键（含焦点管理） |
 | `qt_set_property` | 写属性（含写后读回 `value`，可发现被校验逻辑拒绝的写入；支持 tree item 伪属性 expanded/checked/selected/text） |
 | `qt_invoke_slot` | 调用槽/invokable 方法（≤4 参数；方法名可裸写或带签名，如 `toggleView` / `toggleView(bool)`） |
-| `qt_get_text` | 提取文本（widget 或 tree item；隐藏控件也可读） |
+| `qt_get_text` | 提取文本（widget 或 tree item；隐藏控件也可读；对 item view 转储模型文本，行以换行、列以制表符分隔） |
 | `qt_trigger_action` | 触发 QAction（菜单/工具栏；按文本匹配时递归搜索子菜单条目） |
 | `qt_wait_for` | 等待条件（widget_visible / window_count_changed / property_equals；超时报告最后观测值） |
 | `qt_batch` | 一次往返顺序执行多步，失败即停 |
-| `qt_messages` | 读取 Qt 内部消息（qWarning 等）环形缓冲 |
+| `qt_debug_message` | 读取 Qt 内部消息（qDebug/qWarning 等）环形缓冲 |
+| `qt_host_messages` | 读取宿主通过 `QtMcp::postMessage()` 主动推送的消息（读后清空暂存区，不会重复送达；宿主不推送则恒为空） |
 
-行为约定：操作类工具采用**异步事件投递**（不会在模态 `exec()` 上死锁）；对隐藏/禁用/被模态阻断的目标**快速失败**并给出原因（`force=true` 可绕过）；ref 全局单调编号，跨 snapshot 稳定，绝不静默重绑。
+行为约定：操作类工具采用**异步事件投递**（不会在模态 `exec()` 上死锁）；对隐藏/禁用/被模态阻断的目标**快速失败**并给出原因（`force=true` 可绕过）；ref 全局单调编号，跨 snapshot 稳定，绝不静默重绑（包括宿主分配器复用已销毁控件地址的情形：旧 ref 一律明确报错，不会指向新控件）。
+
+**不能承诺的行为边界**（agent 使用时必须知晓）：
+
+- **事件投递即返回，不保证效果**。`qt_click`/`qt_type_text`/`qt_key_press` 把事件投进宿主事件队列就返回成功；目标是否真的响应（按钮被点中、文本被接受），要用 `qt_wait_for` / `qt_get_text` / 属性读回来断言。不要用固定 sleep 代替条件等待。
+- **宿主 GUI 线程阻塞时一切免谈**。所有工具都运行在宿主事件循环里；宿主做长耗时同步操作（重计算、阻塞 IO）期间，请求会排队到其恢复。探针无法绕过，也没有超时兜底。
+- **ref 只在控件存活期间有效**。对话框、动态页面销毁后旧 ref 报 "ref not found"，必须重新 `qt_find_widget`——哪怕新对话框看起来和前一个一模一样。
+- **坐标点击（`position`）假设布局静止**。窗口缩放、面板展开/折叠、内容滚动都会使坐标失效；能按 ref/item/row/col 寻址就不要用坐标。纯自绘组件（如 Qtitan Grid 的行、QGraphicsScene 条目）没有子控件 ref，坐标（或专用场景工具）是唯一途径。
+- **截图是离屏渲染（`QWidget::grab`）**，不依赖窗口在屏幕上可见；但对绕过 Qt 绘制链的控件（原生子窗口、OpenGL/DirectX 直绘、Qtitan Grid 的 GraphicControl）可能得到空白/底色——此时改截其父容器或顶层窗口。
+- **`qt_wait_for` / `qt_batch` 的等待不是无副作用的**：等待期间宿主的事件循环照常运转（定时器、动画、网络回调都会执行），界面状态可能自行变化。
+- **`qt_drag` 会移动物理鼠标光标**（兼容读 `QCursor::pos()` 的拖拽实现），执行期间不要动鼠标；Wayland 上不可用。
+- **模态语义按 Qt 规则**：存在应用模态窗口时，对窗口外控件的操作被拒绝（`force=true` 可绕过，但事件仍会被 Qt 的模态过滤器丢弃——force 只对"隐藏/禁用"类守卫真正有效）。
+- **只有 Qt 控件树内的界面可被感知**。探针的内省与操作建立在 QObject/QWidget 树和 Qt 事件队列上：经其他渠道创建的界面——直接调 Win32 API 的对话框（`GetOpenFileName`/`IFileDialog` 等）、嵌入的原生子窗口（HWND/CWnd）、QtWebEngine 的页面 DOM、OpenGL/DirectX 直绘内容——不会出现在快照里，也收不到合成事件。Qt 自带的文件/颜色/字体对话框默认在 Windows 上是**操作系统原生窗口**，本属此类；探针在 `install()` 时设置 `Qt::AA_DontUseNativeDialogs` 把它们静默切换为 Qt 控件实现（宿主无需改任何代码，`qt_file_dialog` 即可驱动），但该属性管不到绕过 Qt 对话框类、直接调用 OS API 的代码路径——那些需要宿主自行改造，否则对 agent 不可见。
 
 ## 构建本仓库
 
@@ -122,7 +147,7 @@ src/
   core/                # ProbeServer 装配、RefRegistry（ref → QPointer，单调编号）
   transport/           # QTcpServer 上的极简 HTTP/1.1 + SSE
   protocol/            # JSON-RPC 2.0、MCP 会话、工具注册与分发
-  tools/               # Introspector / Interactor / Screenshotter / MessageLog
+  tools/               # Introspector / Interactor / Screenshotter / MessageLog / HostLog
 examples/demo_app/     # 覆盖 20+ 控件与各类联动/阻塞场景的测试程序
 examples/qt-ads/       # 第三方复杂项目（Qt-Advanced-Docking-System）嵌入指南、补丁与测试脚本
 client/                # uv 环境 + verify.py 端到端验证

@@ -26,7 +26,8 @@ public:
 
     QJsonObject click(const QString &ref, const QString &button,
                       const QStringList &modifiers, const QPoint &position, bool hasPosition,
-                      bool force, bool doubleClick, int itemRow = -1, int itemCol = -1);
+                      bool force, bool doubleClick, int itemRow = -1, int itemCol = -1,
+                      const QString &itemText = QString());
     QJsonObject typeText(const QString &ref, const QString &text, bool clearFirst,
                          bool useClipboard, bool force);
     QJsonObject keyPress(const QString &key, const QString &ref, bool force);
@@ -42,6 +43,8 @@ public:
     QJsonObject getText(const QString &ref);
     QJsonObject triggerAction(const QString &ref, const QString &actionText,
                               bool hasActionIndex, int actionIndex);
+    /// Fill in and confirm (or cancel) the currently active QFileDialog.
+    QJsonObject fileDialog(const QString &path, bool confirm);
 
     /// Process Qt events for the given number of milliseconds (GUI thread).
     static void processEventsFor(int ms);

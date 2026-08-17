@@ -1,13 +1,18 @@
 #include "Interactor.h"
 
 #include <QAbstractButton>
+#include <QAbstractItemModel>
+#include <QAbstractItemView>
 #include <QAbstractScrollArea>
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
 #include <QContextMenuEvent>
+#include <QDir>
 #include <QElapsedTimer>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QFont>
 #include <QJsonArray>
 #include <QKeyEvent>
@@ -28,6 +33,7 @@
 #include <QTextEdit>
 #include <QThread>
 #include <QTimer>
+#include <QTreeView>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QUrl>
@@ -238,6 +244,62 @@ bool jsonToRect(const QJsonValue &v, QRect *out)
     return false;
 }
 
+/// Depth-first search of a model for the first index whose DisplayRole
+/// contains `text`. Table-like models scan every column; tree children only
+/// column 0. Depth-capped against pathological models.
+QModelIndex findViewIndexByText(QAbstractItemModel *model, const QString &text)
+{
+    const QString needle = text.trimmed();
+    std::function<QModelIndex(const QModelIndex &, int)> walk =
+        [&](const QModelIndex &parent, int depth) -> QModelIndex {
+        if (depth > 8)
+            return QModelIndex();
+        const int rows = model->rowCount(parent);
+        const int cols = model->columnCount(parent);
+        for (int r = 0; r < rows; ++r) {
+            const int colLimit = parent.isValid() ? 1 : cols;
+            for (int c = 0; c < colLimit; ++c) {
+                const QModelIndex idx = model->index(r, c, parent);
+                if (idx.isValid()
+                    && idx.data(Qt::DisplayRole).toString().trimmed().contains(needle))
+                    return idx;
+            }
+            const QModelIndex child = walk(model->index(r, 0, parent), depth + 1);
+            if (child.isValid())
+                return child;
+        }
+        return QModelIndex();
+    };
+    return walk(QModelIndex(), 0);
+}
+
+/// Dump the DisplayRole contents of an item view's model as text (rows as
+/// lines, columns tab-separated, tree children indented). Capped to keep
+/// responses bounded on huge models.
+QString dumpViewText(QAbstractItemView *view)
+{
+    QAbstractItemModel *model = view->model();
+    if (!model)
+        return QString();
+    QStringList lines;
+    std::function<void(const QModelIndex &, int)> walk =
+        [&](const QModelIndex &parent, int depth) {
+        if (lines.size() >= 200 || depth > 8)
+            return;
+        const int rows = model->rowCount(parent);
+        const int cols = qMin(model->columnCount(parent), 20);
+        for (int r = 0; r < rows && lines.size() < 200; ++r) {
+            QStringList cells;
+            for (int c = 0; c < cols; ++c)
+                cells << model->index(r, c, parent).data(Qt::DisplayRole).toString();
+            lines << QString(depth * 2, QLatin1Char(' ')) + cells.join(QLatin1Char('\t'));
+            walk(model->index(r, 0, parent), depth + 1);
+        }
+    };
+    walk(QModelIndex(), 0);
+    return lines.join(QLatin1Char('\n'));
+}
+
 QString jsonTypeName(const QJsonValue &v)
 {
     switch (v.type()) {
@@ -439,7 +501,7 @@ void Interactor::ensureInteractable(QWidget *widget, const QString &ref, bool fo
 QJsonObject Interactor::click(const QString &ref, const QString &button,
                               const QStringList &modifiers, const QPoint &position,
                               bool hasPosition, bool force, bool doubleClick,
-                              int itemRow, int itemCol)
+                              int itemRow, int itemCol, const QString &itemText)
 {
     // Tree item refs ("i...") click an item inside its QTreeWidget's viewport.
     {
@@ -463,29 +525,73 @@ QJsonObject Interactor::click(const QString &ref, const QString &button,
     const Qt::MouseButton qtButton = parseButton(button);
     const Qt::KeyboardModifiers qtMods = parseModifiers(modifiers);
 
-    // Table cell targeting: row/col address a QTableWidget cell directly, no
-    // coordinate math required from the client. Off-screen cells are scrolled
-    // into view first, so any cell of the table is reachable.
+    // Cell/item targeting: row/col (or item_text) address a model index
+    // directly, no coordinate math required from the client. Off-screen
+    // cells are scrolled into view first, so any cell is reachable.
     bool cellTarget = false;
     QPointF cellPos; // in viewport coordinates
-    if (itemRow >= 0) {
-        QTableWidget *table = qobject_cast<QTableWidget *>(widget);
-        if (!table)
+    if (itemRow >= 0 || !itemText.isEmpty()) {
+        if (QTableWidget *table = qobject_cast<QTableWidget *>(widget)) {
+            if (itemCol < 0)
+                itemCol = 0;
+            if (itemRow >= table->rowCount() || itemCol >= table->columnCount())
+                throw ToolError(QStringLiteral("cell (%1,%2) out of range (%3 rows x %4 cols)")
+                                    .arg(itemRow).arg(itemCol)
+                                    .arg(table->rowCount()).arg(table->columnCount()));
+            QTableWidgetItem *cell = table->item(itemRow, itemCol);
+            if (!itemText.isEmpty()) {
+                // item_text on a QTableWidget: locate the cell by its text
+                const QList<QTableWidgetItem *> found =
+                    table->findItems(itemText, Qt::MatchContains);
+                cell = found.isEmpty() ? nullptr : found.first();
+                if (!cell)
+                    throw ToolError(QStringLiteral("no cell containing text '%1'").arg(itemText));
+            } else if (!cell) {
+                throw ToolError(QStringLiteral("cell (%1,%2) is empty").arg(itemRow).arg(itemCol));
+            }
+            table->scrollToItem(cell);
+            cellPos = QPointF(table->visualItemRect(cell).center());
+            cellTarget = true;
+        } else if (QAbstractItemView *view = qobject_cast<QAbstractItemView *>(widget)) {
+            QAbstractItemModel *model = view->model();
+            if (!model)
+                throw ToolError(QStringLiteral("View %1 has no model").arg(ref));
+            QModelIndex index;
+            if (!itemText.isEmpty()) {
+                index = findViewIndexByText(model, itemText);
+                if (!index.isValid())
+                    throw ToolError(QStringLiteral("no item containing text '%1' in view %2")
+                                        .arg(itemText, ref));
+            } else {
+                if (itemCol < 0)
+                    itemCol = 0;
+                if (itemRow >= model->rowCount() || itemCol >= model->columnCount())
+                    throw ToolError(QStringLiteral("cell (%1,%2) out of range (%3 rows x %4 cols)")
+                                        .arg(itemRow).arg(itemCol)
+                                        .arg(model->rowCount()).arg(model->columnCount()));
+                index = model->index(itemRow, itemCol);
+                if (!index.isValid())
+                    throw ToolError(QStringLiteral("cell (%1,%2) has no model index")
+                                        .arg(itemRow).arg(itemCol));
+            }
+            // Collapsed tree branches have no visual rect: expand the chain.
+            if (QTreeView *treeView = qobject_cast<QTreeView *>(widget)) {
+                for (QModelIndex p = index.parent(); p.isValid(); p = p.parent())
+                    treeView->expand(p);
+            }
+            view->scrollTo(index);
+            const QRect r = view->visualRect(index);
+            if (!r.isValid())
+                throw ToolError(QStringLiteral("item at (%1,%2) has no visible rect (collapsed?)")
+                                    .arg(index.row()).arg(index.column()));
+            cellPos = QPointF(r.center());
+            cellTarget = true;
+        } else if (itemRow >= 0 || !itemText.isEmpty()) {
             throw ToolError(QStringLiteral(
-                "row/col clicking is only supported on QTableWidget targets "
-                "(ref %1 is %2)").arg(ref, QString::fromLatin1(widget->metaObject()->className())));
-        if (itemCol < 0)
-            itemCol = 0;
-        if (itemRow >= table->rowCount() || itemCol >= table->columnCount())
-            throw ToolError(QStringLiteral("cell (%1,%2) out of range (%3 rows x %4 cols)")
-                                .arg(itemRow).arg(itemCol)
-                                .arg(table->rowCount()).arg(table->columnCount()));
-        QTableWidgetItem *cell = table->item(itemRow, itemCol);
-        if (!cell)
-            throw ToolError(QStringLiteral("cell (%1,%2) is empty").arg(itemRow).arg(itemCol));
-        table->scrollToItem(cell);
-        cellPos = QPointF(table->visualItemRect(cell).center());
-        cellTarget = true;
+                "row/col/item_text clicking is only supported on item views "
+                "(QListView/QTableView/QTreeView/QTableWidget); ref %1 is %2")
+                                .arg(ref, QString::fromLatin1(widget->metaObject()->className())));
+        }
     }
 
     QPointF pos;
@@ -1145,6 +1251,11 @@ QJsonObject Interactor::getText(const QString &ref)
         text = textEdit->toPlainText();
         document = textEdit->document();
         found = true;
+    } else if (QAbstractItemView *view = qobject_cast<QAbstractItemView *>(obj)) {
+        // Model views (QListView/QTableView/QTreeView and the *Widget
+        // subclasses): dump the model's display text.
+        text = dumpViewText(view);
+        found = true;
     } else {
         // Generic paths, in order: invokable text()/currentText() methods, then
         // the "text"/"currentText" Q_PROPERTY (QLabel/QLineEdit/QAbstractButton
@@ -1302,6 +1413,73 @@ QJsonObject Interactor::triggerAction(const QString &ref, const QString &actionT
     };
 }
 
+// ---------------------------------------------------------- file_dialog
+
+QJsonObject Interactor::fileDialog(const QString &path, bool confirm)
+{
+    if (path.isEmpty())
+        throw ToolError(QStringLiteral("path is required"));
+
+    QWidget *active = QApplication::activeModalWidget();
+    if (!active)
+        active = QApplication::activePopupWidget();
+    // Tolerate focus proxies: walk up from the active widget to the dialog.
+    QFileDialog *dialog = nullptr;
+    for (QWidget *w = active; w; w = w->parentWidget()) {
+        dialog = qobject_cast<QFileDialog *>(w);
+        if (dialog)
+            break;
+    }
+    if (!dialog) {
+        throw ToolError(QStringLiteral(
+            "The active modal/popup is not a QFileDialog (it is %1). "
+            "Note: the probe sets Qt::AA_DontUseNativeDialogs at install(), so only "
+            "dialogs created BEFORE QtMcp::install() can be OS-native and invisible.")
+                            .arg(active ? QString::fromLatin1(active->metaObject()->className())
+                                        : QStringLiteral("<none>")));
+    }
+
+    const QFileInfo info(path);
+    // selectFile() alone does not reliably populate the file-name line edit on
+    // Qt 5.15's widget dialog (accept() then does nothing); set the text of the
+    // internal "fileNameEdit" directly — accept() resolves it against the
+    // current directory, for open/save and directory modes alike.
+    QLineEdit *nameEdit = dialog->findChild<QLineEdit *>(QStringLiteral("fileNameEdit"));
+    QString applied;
+    if (dialog->fileMode() == QFileDialog::Directory) {
+        // Directory chooser: navigating into the target and accepting selects it.
+        const QString target = info.isDir() ? info.absoluteFilePath()
+                                            : info.absolutePath();
+        dialog->setDirectory(target);
+        if (nameEdit)
+            nameEdit->setText(target);
+        applied = target;
+    } else {
+        dialog->setDirectory(info.absolutePath());
+        dialog->selectFile(info.fileName());
+        if (nameEdit)
+            nameEdit->setText(info.fileName());
+        applied = info.absoluteFilePath();
+    }
+
+    // Deferred like trigger_action: accepting may run host code that opens
+    // another modal exec(); responding first keeps a sequential client alive.
+    // QFileDialog hides accept() as protected — go through the meta-object
+    // (QDialog::accept/reject are slots; virtual dispatch reaches the override).
+    QPointer<QFileDialog> guard(dialog);
+    QTimer::singleShot(0, qApp, [guard, confirm]() {
+        if (!guard)
+            return;
+        QMetaObject::invokeMethod(guard, confirm ? "accept" : "reject");
+    });
+
+    return QJsonObject{
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("applied_path"), applied},
+        {QStringLiteral("confirmed"), confirm},
+    };
+}
+
 // ------------------------------------------------------------------ schemas
 
 void Interactor::registerTools(ToolRegistry &registry)
@@ -1342,14 +1520,22 @@ void Interactor::registerTools(ToolRegistry &registry)
                  {QStringLiteral("row"),
                   QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")},
                               {QStringLiteral("description"),
-                               QStringLiteral("QTableWidget only: click the cell at this row "
+                               QStringLiteral("Item views (QListView/QTableView/QTreeView/"
+                                              "QTableWidget): click the cell at this row "
                                               "(with 'col'). Off-screen cells are scrolled into "
                                               "view first. Combine with double_click to open "
                                               "the cell editor.")}}},
                  {QStringLiteral("col"),
                   QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")},
                               {QStringLiteral("description"),
-                               QStringLiteral("QTableWidget only: cell column; default 0.")}}},
+                               QStringLiteral("Cell column for 'row'; default 0.")}}},
+                 {QStringLiteral("item_text"),
+                  QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
+                              {QStringLiteral("description"),
+                               QStringLiteral("Item views: click the first item whose text "
+                                              "contains this substring (tables scan all columns, "
+                                              "trees/lists scan column 0; collapsed branches are "
+                                              "expanded automatically).")}}},
                  {QStringLiteral("force"),
                   QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")},
                               {QStringLiteral("default"), false},
@@ -1380,7 +1566,40 @@ void Interactor::registerTools(ToolRegistry &registry)
                 args.value(QStringLiteral("force")).toBool(false),
                 args.value(QStringLiteral("double_click")).toBool(false),
                 args.value(QStringLiteral("row")).toInt(-1),
-                args.value(QStringLiteral("col")).toInt(-1)));
+                args.value(QStringLiteral("col")).toInt(-1),
+                args.value(QStringLiteral("item_text")).toString()));
+        });
+
+    registry.registerTool(
+        QStringLiteral("qt_file_dialog"),
+        QStringLiteral("Fill in and confirm (or cancel) the currently active QFileDialog. "
+                       "Open/save dialogs: sets the directory and selects the file. Directory "
+                       "choosers (getExistingDirectory): navigates to the directory so confirm "
+                       "selects it. The probe sets Qt::AA_DontUseNativeDialogs at install(), so "
+                       "file dialogs created after that are Qt widgets and drivable; OS-native "
+                       "dialogs are not. Call after opening the dialog (e.g. via qt_click), "
+                       "optionally qt_wait_for its appearance first."),
+        QJsonObject{
+            {QStringLiteral("type"), QStringLiteral("object")},
+            {QStringLiteral("properties"),
+             QJsonObject{
+                 {QStringLiteral("path"),
+                  QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
+                              {QStringLiteral("description"),
+                               QStringLiteral("Absolute file path (open/save) or directory "
+                                              "path (directory chooser).")}}},
+                 {QStringLiteral("confirm"),
+                  QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")},
+                              {QStringLiteral("default"), true},
+                              {QStringLiteral("description"),
+                               QStringLiteral("true: accept the dialog; false: cancel it.")}}},
+             }},
+            {QStringLiteral("required"), QJsonArray{QStringLiteral("path")}},
+        },
+        [this](const QJsonObject &args) {
+            return ToolResult::fromData(fileDialog(
+                args.value(QStringLiteral("path")).toString(),
+                args.value(QStringLiteral("confirm")).toBool(true)));
         });
 
     registry.registerTool(

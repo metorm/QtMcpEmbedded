@@ -1,6 +1,7 @@
 #include "Introspector.h"
 
 #include <QAbstractButton>
+#include <QAction>
 #include <QApplication>
 #include <QComboBox>
 #include <QJsonArray>
@@ -67,7 +68,9 @@ bool invokeBoolMethod(QObject *obj, const char *signature, bool *out)
 
 /// Counterpart of Python's `_safe_text`: read text() when available, falling
 /// back to the "text" property (QLabel/QLineEdit/QAbstractButton expose text
-/// as a property, not as an invokable method).
+/// as a property, not as an invokable method). When both are empty, try the
+/// "title" property as a last resort — group-like containers (QGroupBox,
+/// QWizardPage, Qtitan RibbonPage) carry their label there.
 QString safeText(QWidget *widget)
 {
     QString text;
@@ -75,8 +78,14 @@ QString safeText(QWidget *widget)
         return text;
     const QMetaObject *meta = widget->metaObject();
     const int index = meta->indexOfProperty("text");
-    if (index >= 0 && meta->property(index).userType() == QMetaType::QString)
-        return widget->property("text").toString();
+    if (index >= 0 && meta->property(index).userType() == QMetaType::QString) {
+        text = widget->property("text").toString();
+        if (!text.isEmpty())
+            return text;
+    }
+    const int titleIndex = meta->indexOfProperty("title");
+    if (titleIndex >= 0 && meta->property(titleIndex).userType() == QMetaType::QString)
+        return widget->property("title").toString();
     return QString();
 }
 
@@ -551,6 +560,23 @@ QJsonObject Introspector::widgetDetails(const QString &ref)
         result.insert(QStringLiteral("geometry"), geometryJson(widget->geometry()));
         result.insert(QStringLiteral("visible"), widget->isVisible());
         result.insert(QStringLiteral("enabled"), widget->isEnabled());
+
+        // Attached actions are the primary way to drive container-like widgets
+        // (ribbon groups/tabs, toolbars) — list them so agents can discover
+        // what qt_trigger_action can fire without probing blindly.
+        QJsonArray actions;
+        for (QAction *action : widget->actions()) {
+            if (!action)
+                continue;
+            actions.append(QJsonObject{
+                {QStringLiteral("text"), action->text()},
+                {QStringLiteral("tooltip"), action->toolTip()},
+                {QStringLiteral("enabled"), action->isEnabled()},
+                {QStringLiteral("separator"), action->isSeparator()},
+            });
+        }
+        if (!actions.isEmpty())
+            result.insert(QStringLiteral("actions"), actions);
 
         const QSize hint = widget->sizeHint();
         result.insert(QStringLiteral("size_hint"),

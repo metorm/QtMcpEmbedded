@@ -26,9 +26,21 @@ add_library(QtMcpEmbedded STATIC
     tools/Screenshotter.cpp
     tools/MessageLog.h
     tools/MessageLog.cpp
+    tools/HostLog.h
+    tools/HostLog.cpp
 )
 
 target_include_directories(QtMcpEmbedded PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Capacity of the QtMcp::postMessage() staging ring buffer (qt_host_messages).
+set(QTMCP_HOST_LOG_CAPACITY 500 CACHE STRING
+    "Max staged host-log messages kept for qt_host_messages (oldest dropped beyond this)")
+# Capacity of the Qt internal message ring buffer (qt_debug_message).
+set(QTMCP_MESSAGE_LOG_CAPACITY 500 CACHE STRING
+    "Max captured Qt internal messages (qDebug/qWarning/...) kept for qt_debug_message")
+target_compile_definitions(QtMcpEmbedded
+    PRIVATE QTMCP_HOST_LOG_CAPACITY=${QTMCP_HOST_LOG_CAPACITY}
+            QTMCP_MESSAGE_LOG_CAPACITY=${QTMCP_MESSAGE_LOG_CAPACITY})
 
 target_link_libraries(QtMcpEmbedded
     PUBLIC

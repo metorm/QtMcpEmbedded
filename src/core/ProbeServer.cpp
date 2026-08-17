@@ -6,6 +6,7 @@
 #include <QUrl>
 
 #include "ToolError.h"
+#include "../tools/HostLog.h"
 #include "../tools/MessageLog.h"
 #include "../transport/SseStream.h"
 
@@ -69,6 +70,7 @@ ProbeServer::ProbeServer(QObject *parent)
     setObjectName(QString::fromLatin1(PROBE_OBJECT_NAME));
 
     MessageLog::instance().install();
+    HostLog::instance().setEnabled(true);
     registerTools();
 
     connect(m_http, &HttpServer::requestReceived, this, &ProbeServer::onHttpRequest);
@@ -143,6 +145,7 @@ void ProbeServer::registerTools()
     m_interactor.registerTools(m_tools);
     m_screenshotter.registerTools(m_tools);
     MessageLog::instance().registerTools(m_tools);
+    HostLog::instance().registerTools(m_tools);
 
     // qt_batch dispatches through the registry; step method names accept both
     // the qt_* tool names and the qt-mcp probe method names (click, type_text,

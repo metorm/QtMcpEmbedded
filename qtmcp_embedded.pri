@@ -8,6 +8,14 @@
 QT += widgets network
 CONFIG += c++17
 
+# 两个日志缓冲区容量：QTMCP_HOST_LOG_CAPACITY = qt_host_messages 暂存区
+# （QtMcp::postMessage 环形缓冲），QTMCP_MESSAGE_LOG_CAPACITY = qt_debug_message
+# 的 Qt 内部消息环形缓冲；均可用 qmake 同名变量覆盖
+isEmpty(QTMCP_HOST_LOG_CAPACITY): QTMCP_HOST_LOG_CAPACITY = 500
+isEmpty(QTMCP_MESSAGE_LOG_CAPACITY): QTMCP_MESSAGE_LOG_CAPACITY = 500
+DEFINES += QTMCP_HOST_LOG_CAPACITY=$$QTMCP_HOST_LOG_CAPACITY \
+           QTMCP_MESSAGE_LOG_CAPACITY=$$QTMCP_MESSAGE_LOG_CAPACITY
+
 QTMCP_ROOT = $$PWD
 INCLUDEPATH += $$QTMCP_ROOT/src
 
@@ -27,6 +35,7 @@ HEADERS += \
     $$QTMCP_ROOT/src/tools/Interactor.h \
     $$QTMCP_ROOT/src/tools/Screenshotter.h \
     $$QTMCP_ROOT/src/tools/MessageLog.h \
+    $$QTMCP_ROOT/src/tools/HostLog.h \
     $$QTMCP_ROOT/src/transport/HttpServer.h \
     $$QTMCP_ROOT/src/transport/SseStream.h
 
@@ -42,5 +51,6 @@ SOURCES += \
     $$QTMCP_ROOT/src/tools/Interactor.cpp \
     $$QTMCP_ROOT/src/tools/Screenshotter.cpp \
     $$QTMCP_ROOT/src/tools/MessageLog.cpp \
+    $$QTMCP_ROOT/src/tools/HostLog.cpp \
     $$QTMCP_ROOT/src/transport/HttpServer.cpp \
     $$QTMCP_ROOT/src/transport/SseStream.cpp

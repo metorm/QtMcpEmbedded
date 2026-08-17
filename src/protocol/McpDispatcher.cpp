@@ -23,7 +23,31 @@ const char BASELINE_INSTRUCTIONS[] =
     "qt_click/qt_type_text/qt_get_text etc. with the returned refs. "
     "If the host application exits (e.g. after you trigger a quit/close action or "
     "confirm an exit prompt), this server shuts down with it: the connection drops "
-    "and further calls fail — that is normal termination, not an error.";
+    "and further calls fail — that is normal termination, not an error. "
+    "Behavioral limits you MUST respect: "
+    "(1) Action tools (qt_click/qt_type_text/qt_key_press/qt_trigger_action) post "
+    "events asynchronously and return immediately — success means 'event posted', "
+    "NOT 'effect happened'. Confirm outcomes with qt_wait_for/qt_get_text/property "
+    "reads; never rely on fixed sleeps. "
+    "(2) Everything runs on the host GUI thread; while the host is busy in a long "
+    "synchronous operation, requests queue — there is no timeout and no way around it. "
+    "(3) Refs are valid only while their widget is alive. After a dialog/panel is "
+    "destroyed, its old refs fail with 'ref not found' — call qt_find_widget again. "
+    "Refs are never silently rebound to a different widget. "
+    "(4) Coordinate clicks (position) assume a static layout: resizing, expand/"
+    "collapse and scrolling invalidate them. Prefer ref/item/row/col addressing. "
+    "Painted-only elements (e.g. owner-drawn grid rows) have no refs — coordinates "
+    "are the only way to hit them. "
+    "(5) Screenshots are off-screen renders; widgets painting outside Qt's pipeline "
+    "(native child windows, OpenGL/direct rendering) may come out blank — capture a "
+    "parent container or the top-level window instead. "
+    "(6) While qt_wait_for/qt_batch waits, the host event loop keeps running: "
+    "timers, animations and async callbacks may change the UI underneath you. "
+    "(7) qt_drag moves the physical mouse cursor — do not touch the mouse during a "
+    "drag; it is unavailable on Wayland. "
+    "(8) While an application-modal window is up, operations on widgets outside it "
+    "are refused; force=true bypasses the guard for hidden/disabled widgets only — "
+    "Qt still discards events blocked by modality.";
 
 QByteArray toBytes(const QJsonObject &obj)
 {
