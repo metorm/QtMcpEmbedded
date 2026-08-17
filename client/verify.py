@@ -568,6 +568,62 @@ async def main() -> int:
                 check("linkage: cell edit -> sum recomputed", waited.get("ok") is True,
                       json.dumps(waited)[:100])
 
+            # --- non-text cell editors: combo / spin delegates ---
+            delegate_table_ref = await find_ref(session, "delegateTable")
+            delegate_label_ref = await find_ref(session, "delegateLabel")
+
+            # combo editor: double-click cell -> QComboBox opens -> set -> Return
+            await call(session, "qt_click", {"ref": delegate_table_ref,
+                                             "double_click": True, "row": 0, "col": 0})
+            await asyncio.sleep(0.3)
+            combos = parse_json(await call(session, "qt_find_widget",
+                                           {"class_name": "QComboBox"}))
+            visible_combos = [w for w in combos.get("widgets", []) if w.get("visible")]
+            # the Basic-tab combo is on a hidden tab; the cell editor combo is visible
+            check("combo cell editor opened", len(visible_combos) >= 1,
+                  json.dumps(combos)[:150])
+            if visible_combos:
+                cmb = visible_combos[0]
+                cur = parse_json(await call(session, "qt_get_text", {"ref": cmb["ref"]}))
+                check("combo editor shows cell value", cur.get("text") == "Red",
+                      repr(cur.get("text")))
+                await call(session, "qt_set_property",
+                           {"ref": cmb["ref"], "property_name": "currentText",
+                            "value": "Blue"})
+                await call(session, "qt_key_press", {"key": "Return"})
+                waited = await wait_prop(session, delegate_label_ref, "text",
+                                         "delegates: Blue/5 Green/10")
+                check("linkage: combo cell edit committed", waited.get("ok") is True,
+                      json.dumps(waited)[:100])
+
+            # spin editor: double-click cell -> QSpinBox opens -> type -> Return
+            await call(session, "qt_click", {"ref": delegate_table_ref,
+                                             "double_click": True, "row": 0, "col": 1})
+            await asyncio.sleep(0.3)
+            spins = parse_json(await call(session, "qt_find_widget",
+                                          {"class_name": "QSpinBox"}))
+            visible_spins = [w for w in spins.get("widgets", []) if w.get("visible")]
+            check("spin cell editor opened", len(visible_spins) >= 1,
+                  json.dumps(spins)[:150])
+            if visible_spins:
+                sp = visible_spins[0]
+                # type into the spin's internal line edit
+                sp_edits = parse_json(await call(session, "qt_find_widget",
+                                                 {"class_name": "QLineEdit",
+                                                  "root_ref": sp["ref"],
+                                                  "visible_only": False}))
+                sp_edit = sp_edits["widgets"][0]
+                await call(session, "qt_type_text",
+                           {"ref": sp_edit["ref"], "text": "42", "clear_first": True})
+                await call(session, "qt_key_press", {"key": "Return"})
+                waited = await wait_prop(session, delegate_label_ref, "text",
+                                         "delegates: Blue/42 Green/10")
+                check("linkage: spin cell edit committed", waited.get("ok") is True,
+                      json.dumps(waited)[:100])
+            n = await save_shot(await call(session, "qt_screenshot"),
+                                "06_delegate_table.png")
+            check("qt_screenshot delegate table", n > 1000, f"{n} bytes")
+
             # --- back to Basic tab for the dialog flow ---
             await call(session, "qt_set_property",
                        {"ref": tabs_ref, "property_name": "currentIndex", "value": 0})

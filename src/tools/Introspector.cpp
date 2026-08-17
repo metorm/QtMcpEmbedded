@@ -642,8 +642,14 @@ QJsonObject Introspector::findWidget(const QString &pattern, const QString &clas
         const QString wText = safeText(widget);
 
         // All explicit filters must match (AND logic); pattern ORs across fields.
+        // class_name also matches the unqualified name (after the last "::") so
+        // that namespaced classes like ads::CDockWidget are found by "CDockWidget".
+        const QString wClassLower = wClass.toLower();
+        const QString wClassUnqualified =
+            wClassLower.mid(wClassLower.lastIndexOf(QStringLiteral("::")) + 2);
         bool ok = true;
-        if (!className.isEmpty() && wClass.toLower() != classLower)
+        if (!className.isEmpty() && wClassLower != classLower
+            && wClassUnqualified != classLower)
             ok = false;
         if (ok && !objectName.isEmpty() && !wName.toLower().contains(objectLower))
             ok = false;
@@ -708,8 +714,10 @@ QJsonObject Introspector::listWindows(bool skipHidden)
             if (skipHidden && !w->isVisible())
                 continue;
             windows.append(QJsonObject{
+                {QStringLiteral("ref"), m_registry.registerObject(w, QStringLiteral("w"))},
                 {QStringLiteral("class"), QString::fromLatin1(w->metaObject()->className())},
                 {QStringLiteral("objectName"), w->objectName()},
+                {QStringLiteral("title"), w->windowTitle()},
                 {QStringLiteral("size"), QStringLiteral("%1x%2").arg(w->width()).arg(w->height())},
                 {QStringLiteral("visible"), w->isVisible()},
             });

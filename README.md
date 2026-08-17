@@ -60,22 +60,23 @@ QtMcp::install(opts);
 
 注意：宿主程序退出时 MCP server 随之关闭，连接断开属于正常终止。
 
-## 工具一览（17 个）
+## 工具一览（18 个）
 
 | 工具 | 说明 |
 |---|---|
 | `qt_snapshot` | widget 树结构化快照（含 ref、tooltip、勾选/隐藏/禁用标记；内联 list/tree/table 条目及点击坐标） |
-| `qt_find_widget` | 按 objectName/类名/文本/模式查找控件 |
+| `qt_find_widget` | 按 objectName/类名/文本/模式查找控件（类名匹配忽略 C++ 命名空间，`CDockWidget` 可命中 `ads::CDockWidget`） |
 | `qt_widget_details` | 控件或 tree 条目的完整属性 |
-| `qt_object_tree` / `qt_list_windows` | QObject 树 / 顶层窗口 |
+| `qt_object_tree` / `qt_list_windows` | QObject 树 / 顶层窗口（每个窗口带 ref 与标题，可直接用于截图等后续操作） |
 | `qt_active_popup` | 当前模态/弹出窗口（标题、文本、全部按钮的可点击 ref）——处理 messagebox、保存确认等阻塞弹窗的入口 |
 | `qt_screenshot` | 窗口或控件截图（PNG/JPEG，基于真实渲染结果） |
-| `qt_click` | 点击（widget 与 tree item 均可；双击、右键含上下文菜单、修饰键、坐标） |
+| `qt_click` | 点击（widget 与 tree item 均可；双击、右键含上下文菜单、修饰键、坐标；QTableWidget 支持 `row`/`col` 直达任意单元格，屏外单元格自动滚入） |
+| `qt_drag` | 拖拽（源 widget → 目标 widget；路径上移动真实光标以兼容读取 `QCursor::pos()` 的拖拽实现，如 ADS dock 重排） |
 | `qt_type_text` / `qt_key_press` | 文本输入 / 按键（含焦点管理） |
 | `qt_set_property` | 写属性（含写后读回 `value`，可发现被校验逻辑拒绝的写入；支持 tree item 伪属性 expanded/checked/selected/text） |
-| `qt_invoke_slot` | 调用槽/invokable 方法（≤4 参数） |
-| `qt_get_text` | 提取文本（widget 或 tree item） |
-| `qt_trigger_action` | 触发 QAction（菜单/工具栏） |
+| `qt_invoke_slot` | 调用槽/invokable 方法（≤4 参数；方法名可裸写或带签名，如 `toggleView` / `toggleView(bool)`） |
+| `qt_get_text` | 提取文本（widget 或 tree item；隐藏控件也可读） |
+| `qt_trigger_action` | 触发 QAction（菜单/工具栏；按文本匹配时递归搜索子菜单条目） |
 | `qt_wait_for` | 等待条件（widget_visible / window_count_changed / property_equals；超时报告最后观测值） |
 | `qt_batch` | 一次往返顺序执行多步，失败即停 |
 | `qt_messages` | 读取 Qt 内部消息（qWarning 等）环形缓冲 |
@@ -107,7 +108,7 @@ cmake --build --preset local-debug    # 或 local-release
 # 终端 1：GUI 模式启动 demo（窗口会出现在桌面上）
 QT_MCP_PROBE=1 ./build/examples/demo_app/Debug/demo_app.exe
 
-# 终端 2：运行端到端验证（72+ 项断言，覆盖全部工具与阻塞场景）
+# 终端 2：运行端到端验证（80+ 项断言，覆盖全部工具与阻塞场景）
 cd client && uv sync && uv run python verify.py
 ```
 

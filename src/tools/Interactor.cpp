@@ -12,6 +12,7 @@
 #include <QJsonArray>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMetaEnum>
 #include <QMetaMethod>
 #include <QMetaProperty>
@@ -19,8 +20,10 @@
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QRadioButton>
+#include <QSet>
 #include <QStyle>
 #include <QStyleOption>
+#include <QTableWidget>
 #include <QTextDocument>
 #include <QTextEdit>
 #include <QThread>
@@ -34,6 +37,8 @@
 #include "../core/RefRegistry.h"
 #include "../core/ToolError.h"
 #include "../protocol/ToolRegistry.h"
+
+#include <functional>
 
 namespace QtMcp {
 
@@ -433,7 +438,8 @@ void Interactor::ensureInteractable(QWidget *widget, const QString &ref, bool fo
 
 QJsonObject Interactor::click(const QString &ref, const QString &button,
                               const QStringList &modifiers, const QPoint &position,
-                              bool hasPosition, bool force, bool doubleClick)
+                              bool hasPosition, bool force, bool doubleClick,
+                              int itemRow, int itemCol)
 {
     // Tree item refs ("i...") click an item inside its QTreeWidget's viewport.
     {
@@ -457,8 +463,35 @@ QJsonObject Interactor::click(const QString &ref, const QString &button,
     const Qt::MouseButton qtButton = parseButton(button);
     const Qt::KeyboardModifiers qtMods = parseModifiers(modifiers);
 
+    // Table cell targeting: row/col address a QTableWidget cell directly, no
+    // coordinate math required from the client. Off-screen cells are scrolled
+    // into view first, so any cell of the table is reachable.
+    bool cellTarget = false;
+    QPointF cellPos; // in viewport coordinates
+    if (itemRow >= 0) {
+        QTableWidget *table = qobject_cast<QTableWidget *>(widget);
+        if (!table)
+            throw ToolError(QStringLiteral(
+                "row/col clicking is only supported on QTableWidget targets "
+                "(ref %1 is %2)").arg(ref, QString::fromLatin1(widget->metaObject()->className())));
+        if (itemCol < 0)
+            itemCol = 0;
+        if (itemRow >= table->rowCount() || itemCol >= table->columnCount())
+            throw ToolError(QStringLiteral("cell (%1,%2) out of range (%3 rows x %4 cols)")
+                                .arg(itemRow).arg(itemCol)
+                                .arg(table->rowCount()).arg(table->columnCount()));
+        QTableWidgetItem *cell = table->item(itemRow, itemCol);
+        if (!cell)
+            throw ToolError(QStringLiteral("cell (%1,%2) is empty").arg(itemRow).arg(itemCol));
+        table->scrollToItem(cell);
+        cellPos = QPointF(table->visualItemRect(cell).center());
+        cellTarget = true;
+    }
+
     QPointF pos;
-    if (hasPosition) {
+    if (cellTarget) {
+        // pos resolved below via the viewport branch
+    } else if (hasPosition) {
         pos = QPointF(position);
     } else if (QAbstractButton *btn = qobject_cast<QAbstractButton *>(widget)) {
         // The center of a layout-stretched QCheckBox/QRadioButton usually falls
@@ -486,7 +519,9 @@ QJsonObject Interactor::click(const QString &ref, const QString &button,
         target = scrollArea->viewport();
 
     QPointF targetPos = pos;
-    if (target != widget)
+    if (cellTarget)
+        targetPos = cellPos; // already in viewport coordinates
+    else if (target != widget)
         targetPos = QPointF(target->mapFromGlobal(widget->mapToGlobal(pos.toPoint())));
     const QPointF globalPos = QPointF(target->mapToGlobal(targetPos.toPoint()));
 
@@ -524,9 +559,18 @@ QJsonObject Interactor::click(const QString &ref, const QString &button,
                                                               globalPos.toPoint(), qtMods));
     }
 
-    return QJsonObject{{QStringLiteral("ok"), true},
+    QJsonObject result{{QStringLiteral("ok"), true},
                        {QStringLiteral("visible"), widget->isVisible()},
                        {QStringLiteral("enabled"), widget->isEnabled()}};
+    if (cellTarget) {
+        result.insert(QStringLiteral("cell"), QJsonObject{
+            {QStringLiteral("row"), itemRow},
+            {QStringLiteral("col"), itemCol},
+            {QStringLiteral("x"), cellPos.x()},
+            {QStringLiteral("y"), cellPos.y()},
+        });
+    }
+    return result;
 }
 
 QJsonObject Interactor::clickTreeItem(const QString &ref, QTreeWidget *tree,
@@ -720,6 +764,81 @@ QJsonObject Interactor::keyPress(const QString &key, const QString &ref, bool fo
     return QJsonObject{{QStringLiteral("ok"), true}};
 }
 
+// --------------------------------------------------------------------- drag
+
+QJsonObject Interactor::drag(const QString &ref, const QPoint &start, bool hasStart,
+                             const QString &toRef, const QPoint &end, bool hasEnd,
+                             int steps, int durationMs, bool force)
+{
+    QWidget *source = resolveWidget(ref);
+    ensureInteractable(source, ref, force);
+    if (toRef.isEmpty())
+        throw ToolError(QStringLiteral("to_ref is required"));
+    QWidget *target = qobject_cast<QWidget *>(m_registry.resolveOrThrow(toRef));
+    if (!target)
+        throw ToolError(QStringLiteral("Ref %1 is not a QWidget").arg(toRef));
+
+    const QPoint startLocal = hasStart ? start : source->rect().center();
+    const QPoint endLocal = hasEnd ? end : target->rect().center();
+    const QPoint startGlobal = source->mapToGlobal(startLocal);
+    const QPoint endGlobal = target->mapToGlobal(endLocal);
+
+    // The physical cursor is warped along the drag path: drag implementations
+    // (e.g. Qt-Advanced-Docking-System) read QCursor::pos() directly instead
+    // of trusting event coordinates, so purely synthetic events cannot drive
+    // them. Events are still posted (see click() for the modal-deadlock
+    // rationale) and the event loop keeps pumping between steps so the
+    // receiver can run its drag-start logic mid-gesture.
+    QCursor::setPos(startGlobal);
+    QApplication::postEvent(source, new QMouseEvent(QEvent::MouseButtonPress,
+                                                    QPointF(startLocal), QPointF(startGlobal),
+                                                    Qt::LeftButton, Qt::LeftButton,
+                                                    Qt::NoModifier));
+    QApplication::processEvents();
+
+    const int n = qMax(2, steps);
+    const qint64 totalMs = qMax(0, durationMs);
+    QElapsedTimer timer;
+    timer.start();
+    for (int i = 1; i <= n; ++i) {
+        const double t = double(i) / n;
+        const QPoint p(startGlobal.x() + int((endGlobal.x() - startGlobal.x()) * t),
+                       startGlobal.y() + int((endGlobal.y() - startGlobal.y()) * t));
+        QCursor::setPos(p);
+        QWidget *under = QApplication::widgetAt(p);
+        if (!under)
+            under = source;
+        const QPointF local = QPointF(under->mapFromGlobal(p));
+        QApplication::postEvent(under, new QMouseEvent(QEvent::MouseMove, local, QPointF(p),
+                                                       Qt::NoButton, Qt::LeftButton,
+                                                       Qt::NoModifier));
+        QApplication::processEvents();
+        // Pace the gesture while keeping the event loop responsive.
+        while (timer.elapsed() < totalMs * i / n) {
+            QApplication::processEvents();
+            QThread::msleep(1);
+        }
+    }
+
+    QCursor::setPos(endGlobal);
+    QWidget *under = QApplication::widgetAt(endGlobal);
+    if (!under)
+        under = source;
+    const QPointF local = QPointF(under->mapFromGlobal(endGlobal));
+    QApplication::postEvent(under, new QMouseEvent(QEvent::MouseButtonRelease, local,
+                                                   QPointF(endGlobal), Qt::LeftButton,
+                                                   Qt::NoButton, Qt::NoModifier));
+    QApplication::processEvents();
+
+    return QJsonObject{
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("from"), QStringLiteral("%1,%2").arg(startGlobal.x()).arg(startGlobal.y())},
+        {QStringLiteral("to"), QStringLiteral("%1,%2").arg(endGlobal.x()).arg(endGlobal.y())},
+        {QStringLiteral("dropped_on"),
+         QString::fromLatin1(under->metaObject()->className())},
+    };
+}
+
 // ------------------------------------------------------------ set_property
 
 QJsonObject Interactor::setProperty(const QString &ref, const QString &propertyName,
@@ -830,10 +949,17 @@ QJsonObject Interactor::invokeSlot(const QString &ref, const QString &methodName
     if (args.size() > 4)
         throw ToolError(QStringLiteral("invoke_slot supports at most 4 arguments"));
 
+    // Tolerate signature-style names like "toggleView(bool)": QMetaMethod::name()
+    // carries no parameter list, so match on the bare name.
+    QString bareName = methodName;
+    const int paren = bareName.indexOf(QLatin1Char('('));
+    if (paren > 0)
+        bareName.truncate(paren);
+
     const QMetaObject *meta = obj->metaObject();
     for (int i = 0; i < meta->methodCount(); ++i) {
         const QMetaMethod method = meta->method(i);
-        if (method.name() != methodName || method.parameterCount() != args.size())
+        if (method.name() != bareName || method.parameterCount() != args.size())
             continue;
 
         // Try to convert all arguments to this overload's parameter types.
@@ -1103,6 +1229,27 @@ QJsonObject Interactor::triggerAction(const QString &ref, const QString &actionT
     if (hasActionText == hasActionIndex)
         throw ToolError(QStringLiteral("Provide exactly one of action_text or action_index"));
 
+    // Leaf actions include submenu entries (e.g. QMenuBar -> View -> "Label 4"),
+    // so agents can trigger nested menu items in one call. Cycles in menu
+    // ownership are guarded by the visited set.
+    QList<QAction *> candidates = actions;
+    if (hasActionText) {
+        candidates.clear();
+        QSet<const QAction *> visited;
+        std::function<void(const QList<QAction *> &)> collect =
+            [&](const QList<QAction *> &level) {
+                for (QAction *action : level) {
+                    if (!action || visited.contains(action))
+                        continue;
+                    visited.insert(action);
+                    candidates.append(action);
+                    if (QMenu *menu = action->menu())
+                        collect(menu->actions());
+                }
+            };
+        collect(actions);
+    }
+
     QAction *target = nullptr;
     if (hasActionIndex) {
         if (actionIndex < 0 || actionIndex >= actions.size()) {
@@ -1115,7 +1262,7 @@ QJsonObject Interactor::triggerAction(const QString &ref, const QString &actionT
         QString clean = actionText;
         clean.remove(QLatin1Char('&'));
         clean = clean.trimmed();
-        for (QAction *action : actions) {
+        for (QAction *action : candidates) {
             QString candidate = action->text();
             candidate.remove(QLatin1Char('&'));
             if (candidate.trimmed() == clean) {
@@ -1125,7 +1272,7 @@ QJsonObject Interactor::triggerAction(const QString &ref, const QString &actionT
         }
         if (!target) {
             QStringList available;
-            for (QAction *action : actions) {
+            for (QAction *action : candidates) {
                 if (!action->isSeparator())
                     available << action->text();
             }
@@ -1192,6 +1339,17 @@ void Interactor::registerTools(ToolRegistry &registry)
                               {QStringLiteral("description"),
                                QStringLiteral("[x, y] relative to widget top-left. "
                                               "Default: center.")}}},
+                 {QStringLiteral("row"),
+                  QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")},
+                              {QStringLiteral("description"),
+                               QStringLiteral("QTableWidget only: click the cell at this row "
+                                              "(with 'col'). Off-screen cells are scrolled into "
+                                              "view first. Combine with double_click to open "
+                                              "the cell editor.")}}},
+                 {QStringLiteral("col"),
+                  QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")},
+                              {QStringLiteral("description"),
+                               QStringLiteral("QTableWidget only: cell column; default 0.")}}},
                  {QStringLiteral("force"),
                   QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")},
                               {QStringLiteral("default"), false},
@@ -1220,7 +1378,9 @@ void Interactor::registerTools(ToolRegistry &registry)
                 ref, args.value(QStringLiteral("button")).toString(QStringLiteral("left")),
                 modifiers, position, hasPosition,
                 args.value(QStringLiteral("force")).toBool(false),
-                args.value(QStringLiteral("double_click")).toBool(false)));
+                args.value(QStringLiteral("double_click")).toBool(false),
+                args.value(QStringLiteral("row")).toInt(-1),
+                args.value(QStringLiteral("col")).toInt(-1)));
         });
 
     registry.registerTool(
@@ -1290,6 +1450,74 @@ void Interactor::registerTools(ToolRegistry &registry)
             return ToolResult::fromData(
                 keyPress(key, args.value(QStringLiteral("ref")).toString(),
                          args.value(QStringLiteral("force")).toBool(false)));
+        });
+
+    registry.registerTool(
+        QStringLiteral("qt_drag"),
+        QStringLiteral("Drag from a widget (e.g. a dock tab) onto another widget (drop "
+                       "target). Warps the physical cursor along the path — required "
+                       "because drag implementations read QCursor::pos() — while mouse "
+                       "events are posted asynchronously. Use for dock rearrangement and "
+                       "other drag & drop interactions."),
+        QJsonObject{
+            {QStringLiteral("type"), QStringLiteral("object")},
+            {QStringLiteral("properties"),
+             QJsonObject{
+                 {QStringLiteral("ref"),
+                  QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
+                              {QStringLiteral("description"),
+                               QStringLiteral("Drag source widget (press happens here).")}}},
+                 {QStringLiteral("start"),
+                  QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+                              {QStringLiteral("items"),
+                               QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+                              {QStringLiteral("description"),
+                               QStringLiteral("[x, y] in source widget coords; default center.")}}},
+                 {QStringLiteral("to_ref"),
+                  QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
+                              {QStringLiteral("description"),
+                               QStringLiteral("Drop target widget (release happens over it).")}}},
+                 {QStringLiteral("end"),
+                  QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+                              {QStringLiteral("items"),
+                               QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+                              {QStringLiteral("description"),
+                               QStringLiteral("[x, y] in target widget coords; default center.")}}},
+                 {QStringLiteral("steps"),
+                  QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")},
+                              {QStringLiteral("default"), 20}}},
+                 {QStringLiteral("duration_ms"),
+                  QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")},
+                              {QStringLiteral("default"), 500}}},
+                 {QStringLiteral("force"),
+                  QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")},
+                              {QStringLiteral("default"), false}}},
+             }},
+            {QStringLiteral("required"),
+             QJsonArray{QStringLiteral("ref"), QStringLiteral("to_ref")}},
+        },
+        [this](const QJsonObject &args) {
+            const QString ref = args.value(QStringLiteral("ref")).toString();
+            if (ref.isEmpty())
+                throw ToolError(QStringLiteral("ref is required"));
+            QPoint start, end;
+            bool hasStart = false, hasEnd = false;
+            const QJsonArray startArr = args.value(QStringLiteral("start")).toArray();
+            if (startArr.size() == 2) {
+                start = QPoint(startArr[0].toInt(), startArr[1].toInt());
+                hasStart = true;
+            }
+            const QJsonArray endArr = args.value(QStringLiteral("end")).toArray();
+            if (endArr.size() == 2) {
+                end = QPoint(endArr[0].toInt(), endArr[1].toInt());
+                hasEnd = true;
+            }
+            return ToolResult::fromData(drag(
+                ref, start, hasStart,
+                args.value(QStringLiteral("to_ref")).toString(), end, hasEnd,
+                args.value(QStringLiteral("steps")).toInt(20),
+                args.value(QStringLiteral("duration_ms")).toInt(500),
+                args.value(QStringLiteral("force")).toBool(false)));
         });
 
     registry.registerTool(

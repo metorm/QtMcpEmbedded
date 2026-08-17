@@ -26,10 +26,13 @@ public:
 
     QJsonObject click(const QString &ref, const QString &button,
                       const QStringList &modifiers, const QPoint &position, bool hasPosition,
-                      bool force, bool doubleClick);
+                      bool force, bool doubleClick, int itemRow = -1, int itemCol = -1);
     QJsonObject typeText(const QString &ref, const QString &text, bool clearFirst,
                          bool useClipboard, bool force);
     QJsonObject keyPress(const QString &key, const QString &ref, bool force);
+    QJsonObject drag(const QString &ref, const QPoint &start, bool hasStart,
+                     const QString &toRef, const QPoint &end, bool hasEnd,
+                     int steps, int durationMs, bool force);
     QJsonObject setProperty(const QString &ref, const QString &propertyName,
                             const QJsonValue &value);
     QJsonObject invokeSlot(const QString &ref, const QString &methodName,

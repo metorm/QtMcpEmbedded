@@ -24,6 +24,7 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QStatusBar>
+#include <QStyledItemDelegate>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTimer>
@@ -32,6 +33,68 @@
 #include <QVBoxLayout>
 
 #include <QtMcp.h>
+
+/// Combo-box cell editor delegate for delegateTable: editing a cell opens a
+/// QComboBox instead of a line edit.
+class ComboBoxDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &,
+                          const QModelIndex &) const override
+    {
+        auto *combo = new QComboBox(parent);
+        combo->addItems({QStringLiteral("Red"), QStringLiteral("Green"),
+                         QStringLiteral("Blue")});
+        return combo;
+    }
+
+    void setEditorData(QWidget *editor, const QModelIndex &index) const override
+    {
+        auto *combo = qobject_cast<QComboBox *>(editor);
+        if (combo)
+            combo->setCurrentText(index.data(Qt::EditRole).toString());
+    }
+
+    void setModelData(QWidget *editor, QAbstractItemModel *model,
+                      const QModelIndex &index) const override
+    {
+        auto *combo = qobject_cast<QComboBox *>(editor);
+        if (combo)
+            model->setData(index, combo->currentText(), Qt::EditRole);
+    }
+};
+
+/// Spin-box cell editor delegate for delegateTable.
+class SpinBoxDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &,
+                          const QModelIndex &) const override
+    {
+        auto *spin = new QSpinBox(parent);
+        spin->setRange(0, 100);
+        return spin;
+    }
+
+    void setEditorData(QWidget *editor, const QModelIndex &index) const override
+    {
+        auto *spin = qobject_cast<QSpinBox *>(editor);
+        if (spin)
+            spin->setValue(index.data(Qt::EditRole).toInt());
+    }
+
+    void setModelData(QWidget *editor, QAbstractItemModel *model,
+                      const QModelIndex &index) const override
+    {
+        auto *spin = qobject_cast<QSpinBox *>(editor);
+        if (spin)
+            model->setData(index, spin->value(), Qt::EditRole);
+    }
+};
 
 /// Main window with an unsaved-changes guard: closing while dirty asks
 /// "Save changes before quitting?" — a classic blocking scenario.
@@ -364,6 +427,30 @@ int main(int argc, char *argv[])
                      [recomputeSum](int, int) { recomputeSum(); });
     tableColumn->addWidget(itemTable);
     tableColumn->addWidget(sumLabel);
+
+    // Table with non-text cell editors: combo-box column + spin-box column.
+    auto *delegateTable = new QTableWidget(2, 2);
+    delegateTable->setObjectName(QStringLiteral("delegateTable"));
+    delegateTable->setItem(0, 0, new QTableWidgetItem(QStringLiteral("Red")));
+    delegateTable->setItem(0, 1, new QTableWidgetItem(QStringLiteral("5")));
+    delegateTable->setItem(1, 0, new QTableWidgetItem(QStringLiteral("Green")));
+    delegateTable->setItem(1, 1, new QTableWidgetItem(QStringLiteral("10")));
+    delegateTable->setItemDelegateForColumn(0, new ComboBoxDelegate(delegateTable));
+    delegateTable->setItemDelegateForColumn(1, new SpinBoxDelegate(delegateTable));
+    auto *delegateLabel = new QLabel;
+    delegateLabel->setObjectName(QStringLiteral("delegateLabel"));
+    const auto updateDelegateLabel = [delegateTable, delegateLabel]() {
+        delegateLabel->setText(QStringLiteral("delegates: %1/%2 %3/%4")
+                                   .arg(delegateTable->item(0, 0)->text(),
+                                        delegateTable->item(0, 1)->text(),
+                                        delegateTable->item(1, 0)->text(),
+                                        delegateTable->item(1, 1)->text()));
+    };
+    updateDelegateLabel();
+    QObject::connect(delegateTable, &QTableWidget::cellChanged, delegateLabel,
+                     [updateDelegateLabel](int, int) { updateDelegateLabel(); });
+    tableColumn->addWidget(delegateTable);
+    tableColumn->addWidget(delegateLabel);
 
     viewsLayout->addLayout(listColumn);
     viewsLayout->addLayout(treeColumn);
