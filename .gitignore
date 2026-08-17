@@ -14,3 +14,11 @@ __pycache__/
 # Third-party reference project (qt-mcp, Python/PySide6) — kept locally as the
 # design blueprint, not part of this codebase
 qt-mcp/
+
+# Local Qt-ADS experiment workspace (see examples/qt-ads/), helper scripts and
+# runtime-generated settings — not part of this codebase
+tmp/
+build_demo.bat
+client/Settings.ini
+.cache/
+examples/qt-ads/shots/

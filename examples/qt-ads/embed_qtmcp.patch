@@ -1,0 +1,196 @@
+diff -ruN '--exclude=build' '--exclude=.venv' '--exclude=uv.lock' '--exclude=do_build.bat' '--exclude=deploy.bat' a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt	2026-07-24 14:55:28.000000000 +0800
++++ b/CMakeLists.txt	2026-08-16 14:35:01.923097400 +0800
+@@ -59,3 +59,19 @@
+     add_subdirectory(demo)
+ endif()
+ 
++# QtMcpEmbedded probe integration (optional). Set QTMCP_SOURCE_DIR to the
++# QtMcpEmbedded checkout to embed the MCP probe into every example/demo.
++set(QTMCP_SOURCE_DIR "" CACHE PATH "Path to the QtMcpEmbedded sources")
++if(QTMCP_SOURCE_DIR)
++    add_subdirectory(${QTMCP_SOURCE_DIR} ${CMAKE_BINARY_DIR}/qtmcp_embedded)
++    foreach(_qtmcp_target
++            SimpleExample HideShowExample SidebarExample DeleteOnCloseTest
++            CentralWidgetExample AutoHideExample AutoHideDragNDropExample
++            EmptyDockAreaExample DockInDockExample ConfigFlagsExample
++            AdvancedDockingSystemDemo)
++        if(TARGET ${_qtmcp_target})
++            target_link_libraries(${_qtmcp_target} PRIVATE QtMcpEmbedded)
++        endif()
++    endforeach()
++endif()
++
+diff -ruN '--exclude=build' '--exclude=.venv' '--exclude=uv.lock' '--exclude=do_build.bat' '--exclude=deploy.bat' a/demo/main.cpp b/demo/main.cpp
+--- a/demo/main.cpp	2026-07-24 14:55:28.000000000 +0800
++++ b/demo/main.cpp	2026-08-16 14:35:01.923097400 +0800
+@@ -3,6 +3,7 @@
+ #include <QFile>
+ #include <QApplication>
+ #include <QDebug>
++#include <QtMcp.h>
+ 
+ #include <memory>
+ 
+@@ -50,6 +51,7 @@
+ 
+ 	qInstallMessageHandler(myMessageOutput);
+ 	qDebug() << "Message handler test";
++	QtMcp::install();
+ 
+ 	CMainWindow mw;
+ 	mw.show();
+diff -ruN '--exclude=build' '--exclude=.venv' '--exclude=uv.lock' '--exclude=do_build.bat' '--exclude=deploy.bat' a/examples/autohide/main.cpp b/examples/autohide/main.cpp
+--- a/examples/autohide/main.cpp	2026-07-24 14:55:28.000000000 +0800
++++ b/examples/autohide/main.cpp	2026-08-16 14:34:45.146400700 +0800
+@@ -1,9 +1,11 @@
+ #include <mainwindow.h>
+ #include <QApplication>
++#include <QtMcp.h>
+ 
+ int main(int argc, char *argv[])
+ {
+     QApplication a(argc, argv);
++    QtMcp::install();
+     CMainWindow w;
+     w.show();
+     return a.exec();
+diff -ruN '--exclude=build' '--exclude=.venv' '--exclude=uv.lock' '--exclude=do_build.bat' '--exclude=deploy.bat' a/examples/autohidedragndrop/main.cpp b/examples/autohidedragndrop/main.cpp
+--- a/examples/autohidedragndrop/main.cpp	2026-07-24 14:55:28.000000000 +0800
++++ b/examples/autohidedragndrop/main.cpp	2026-08-16 14:34:45.146400700 +0800
+@@ -1,9 +1,11 @@
+ #include <mainwindow.h>
+ #include <QApplication>
++#include <QtMcp.h>
+ 
+ int main(int argc, char *argv[])
+ {
+     QApplication a(argc, argv);
++    QtMcp::install();
+     CMainWindow w;
+     w.show();
+     return a.exec();
+diff -ruN '--exclude=build' '--exclude=.venv' '--exclude=uv.lock' '--exclude=do_build.bat' '--exclude=deploy.bat' a/examples/centralwidget/main.cpp b/examples/centralwidget/main.cpp
+--- a/examples/centralwidget/main.cpp	2026-07-24 14:55:28.000000000 +0800
++++ b/examples/centralwidget/main.cpp	2026-08-16 14:34:45.144791600 +0800
+@@ -1,9 +1,11 @@
+ #include <mainwindow.h>
+ #include <QApplication>
++#include <QtMcp.h>
+ 
+ int main(int argc, char *argv[])
+ {
+     QApplication a(argc, argv);
++    QtMcp::install();
+     CMainWindow w;
+     w.show();
+     return a.exec();
+diff -ruN '--exclude=build' '--exclude=.venv' '--exclude=uv.lock' '--exclude=do_build.bat' '--exclude=deploy.bat' a/examples/configflags/main.cpp b/examples/configflags/main.cpp
+--- a/examples/configflags/main.cpp	2026-07-24 14:55:28.000000000 +0800
++++ b/examples/configflags/main.cpp	2026-08-16 14:34:45.144791600 +0800
+@@ -1,9 +1,11 @@
+ #include <mainwindow.h>
+ #include <QApplication>
++#include <QtMcp.h>
+ 
+ int main(int argc, char *argv[])
+ {
+     QApplication a(argc, argv);
++    QtMcp::install();
+     CMainWindow w;
+     w.show();
+     return a.exec();
+diff -ruN '--exclude=build' '--exclude=.venv' '--exclude=uv.lock' '--exclude=do_build.bat' '--exclude=deploy.bat' a/examples/deleteonclose/main.cpp b/examples/deleteonclose/main.cpp
+--- a/examples/deleteonclose/main.cpp	2026-07-24 14:55:28.000000000 +0800
++++ b/examples/deleteonclose/main.cpp	2026-08-16 14:35:01.922091600 +0800
+@@ -4,6 +4,7 @@
+ #include <QApplication>
+ #include <QMenuBar>
+ #include "DockManager.h"
++#include <QtMcp.h>
+ 
+ 
+ class MainWindow : public QMainWindow
+@@ -29,6 +30,7 @@
+ int main(int argc, char *argv[])
+ {
+     QApplication a(argc, argv);
++    QtMcp::install();
+     MainWindow w;
+ 
+     ads::CDockManager::setConfigFlag(ads::CDockManager::FocusHighlighting, true);
+diff -ruN '--exclude=build' '--exclude=.venv' '--exclude=uv.lock' '--exclude=do_build.bat' '--exclude=deploy.bat' a/examples/dockindock/main.cpp b/examples/dockindock/main.cpp
+--- a/examples/dockindock/main.cpp	2026-07-24 14:55:28.000000000 +0800
++++ b/examples/dockindock/main.cpp	2026-08-16 14:34:45.146400700 +0800
+@@ -1,9 +1,11 @@
+ #include <QApplication>
++#include <QtMcp.h>
+ #include "mainframe.h"
+ 
+ int main(int argc, char *argv[])
+ {
+     QApplication a(argc, argv);
++    QtMcp::install();
+     MainWindow w;
+     w.show();
+ 
+diff -ruN '--exclude=build' '--exclude=.venv' '--exclude=uv.lock' '--exclude=do_build.bat' '--exclude=deploy.bat' a/examples/emptydockarea/main.cpp b/examples/emptydockarea/main.cpp
+--- a/examples/emptydockarea/main.cpp	2026-07-24 14:55:28.000000000 +0800
++++ b/examples/emptydockarea/main.cpp	2026-08-16 14:34:45.146400700 +0800
+@@ -1,9 +1,11 @@
+ #include <mainwindow.h>
+ #include <QApplication>
++#include <QtMcp.h>
+ 
+ int main(int argc, char *argv[])
+ {
+     QApplication a(argc, argv);
++    QtMcp::install();
+     CMainWindow w;
+     w.show();
+     return a.exec();
+diff -ruN '--exclude=build' '--exclude=.venv' '--exclude=uv.lock' '--exclude=do_build.bat' '--exclude=deploy.bat' a/examples/hideshow/main.cpp b/examples/hideshow/main.cpp
+--- a/examples/hideshow/main.cpp	2026-07-24 14:55:28.000000000 +0800
++++ b/examples/hideshow/main.cpp	2026-08-16 14:34:45.144791600 +0800
+@@ -1,9 +1,11 @@
+ #include <QApplication>
++#include <QtMcp.h>
+ #include "../../examples/hideshow/MainWindow.h"
+ 
+ int main(int argc, char *argv[])
+ {
+     QApplication a(argc, argv);
++    QtMcp::install();
+     MainWindow w;
+     w.show();
+ 
+diff -ruN '--exclude=build' '--exclude=.venv' '--exclude=uv.lock' '--exclude=do_build.bat' '--exclude=deploy.bat' a/examples/sidebar/main.cpp b/examples/sidebar/main.cpp
+--- a/examples/sidebar/main.cpp	2026-07-24 14:55:28.000000000 +0800
++++ b/examples/sidebar/main.cpp	2026-08-16 14:34:45.144791600 +0800
+@@ -1,9 +1,11 @@
+ #include <QApplication>
++#include <QtMcp.h>
+ #include "../../examples/simple/MainWindow.h"
+ 
+ int main(int argc, char *argv[])
+ {
+     QApplication a(argc, argv);
++    QtMcp::install();
+     MainWindow w;
+     w.show();
+ 
+diff -ruN '--exclude=build' '--exclude=.venv' '--exclude=uv.lock' '--exclude=do_build.bat' '--exclude=deploy.bat' a/examples/simple/main.cpp b/examples/simple/main.cpp
+--- a/examples/simple/main.cpp	2026-07-24 14:55:28.000000000 +0800
++++ b/examples/simple/main.cpp	2026-08-16 14:34:45.144791600 +0800
+@@ -1,9 +1,11 @@
+ #include <QApplication>
++#include <QtMcp.h>
+ #include "../../examples/simple/MainWindow.h"
+ 
+ int main(int argc, char *argv[])
+ {
+     QApplication a(argc, argv);
++    QtMcp::install();
+     MainWindow w;
+     w.show();
+ 

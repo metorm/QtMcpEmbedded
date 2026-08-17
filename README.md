@@ -124,6 +124,7 @@ src/
   protocol/            # JSON-RPC 2.0、MCP 会话、工具注册与分发
   tools/               # Introspector / Interactor / Screenshotter / MessageLog
 examples/demo_app/     # 覆盖 20+ 控件与各类联动/阻塞场景的测试程序
+examples/qt-ads/       # 第三方复杂项目（Qt-Advanced-Docking-System）嵌入指南、补丁与测试脚本
 client/                # uv 环境 + verify.py 端到端验证
 PLAN.md                # 原始设计计划（含里程碑与风险分析）
 ```
