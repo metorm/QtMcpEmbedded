@@ -107,6 +107,7 @@ CMake `-DQTMCP_HOST_LOG_CAPACITY=N`，qmake `QTMCP_HOST_LOG_CAPACITY=N`。
 - **`qt_drag` 会移动物理鼠标光标**（兼容读 `QCursor::pos()` 的拖拽实现），执行期间不要动鼠标；Wayland 上不可用。
 - **模态语义按 Qt 规则**：存在应用模态窗口时，对窗口外控件的操作被拒绝（`force=true` 可绕过，但事件仍会被 Qt 的模态过滤器丢弃——force 只对"隐藏/禁用"类守卫真正有效）。
 - **只有 Qt 控件树内的界面可被感知**。探针的内省与操作建立在 QObject/QWidget 树和 Qt 事件队列上：经其他渠道创建的界面——直接调 Win32 API 的对话框（`GetOpenFileName`/`IFileDialog` 等）、嵌入的原生子窗口（HWND/CWnd）、QtWebEngine 的页面 DOM、OpenGL/DirectX 直绘内容——不会出现在快照里，也收不到合成事件。Qt 自带的文件/颜色/字体对话框默认在 Windows 上是**操作系统原生窗口**，本属此类；探针在 `install()` 时设置 `Qt::AA_DontUseNativeDialogs` 把它们静默切换为 Qt 控件实现（宿主无需改任何代码，`qt_file_dialog` 即可驱动），但该属性管不到绕过 Qt 对话框类、直接调用 OS API 的代码路径——那些需要宿主自行改造，否则对 agent 不可见。
+- **单会话**：一个探针实例同一时刻只服务一个 MCP 会话。新的 `initialize` 会让旧会话立即失效（后续请求报 404 "Missing or invalid Mcp-Session-Id"）——不要并发连接同一端口；长时间任务期间如需查看状态，用宿主日志（`qt_host_messages`）而不是另开会话。
 
 ## 构建本仓库
 
