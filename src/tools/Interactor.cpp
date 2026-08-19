@@ -633,8 +633,10 @@ QJsonObject Interactor::click(const QString &ref, const QString &button,
 
     // A real mouse press also moves keyboard focus; posted synthetic events
     // don't (focus assignment lives in QApplication's notify path).
-    if (widget->focusPolicy() != Qt::NoFocus)
+    if (widget->focusPolicy() != Qt::NoFocus) {
         widget->setFocus(Qt::MouseFocusReason);
+        m_lastFocusTarget = widget;
+    }
 
     // Events are POSTED, not sent synchronously. A synchronous sendEvent would
     // run the widget's handlers on our own call stack; if one of them enters a
@@ -717,8 +719,10 @@ QJsonObject Interactor::clickTreeItem(const QString &ref, QTreeWidget *tree,
     const QPointF pos = QPointF(rect.center());
     const QPointF globalPos = QPointF(viewport->mapToGlobal(rect.center()));
 
-    if (tree->focusPolicy() != Qt::NoFocus)
+    if (tree->focusPolicy() != Qt::NoFocus) {
         tree->setFocus(Qt::MouseFocusReason);
+        m_lastFocusTarget = tree;
+    }
 
     // Posted, not sent — see click() for the rationale.
     QApplication::postEvent(viewport, new QMouseEvent(QEvent::MouseButtonPress, pos, globalPos,
@@ -856,6 +860,11 @@ QJsonObject Interactor::keyPress(const QString &key, const QString &ref, bool fo
         ensureInteractable(widget, ref, force);
     } else {
         widget = QApplication::focusWidget();
+        if (!widget)
+            // focusWidget() is null when no window is active (the offscreen
+            // platform never activates windows); fall back to the widget the
+            // probe last focused explicitly.
+            widget = m_lastFocusTarget;
         if (!widget)
             throw ToolError(QStringLiteral("No focused widget and no ref provided"));
     }

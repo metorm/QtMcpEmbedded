@@ -205,6 +205,16 @@ cd client && uv sync && uv run python verify.py
 
 `verify.py` 只依赖 MCP 接口、不依赖实现语言，可直接复用于验证任何实现了同一工具方言的探针。注意：脚本最后会让 demo 走"退出→保存确认→Discard"流程自行退出，属预期行为。
 
+也支持无头（offscreen）模式验证，CI 可用：
+
+```bash
+QT_MCP_PROBE=1 QT_QPA_PLATFORM=offscreen ./build/examples/demo_app/Debug/demo_app.exe
+```
+
+> 离屏平台有两个 Qt 层级的坑，库内 `HeadlessCompat` 已做变通（仅在检测到 offscreen/minimal 时启用，桌面平台不受影响）：
+> - **Windows 下 QMessageBox 崩溃**（Qt 5.15 bug）：`QMessageBox::showEvent` 无条件调用 `qt_getWindowsSystemMenu()`，而 offscreen/minimal 的 `platformNativeInterface()` 为 `nullptr`，静态函数 `QMessageBox::warning()` 等一弹即段错误。守卫拦截发往 QMessageBox 的 Show 事件并用公开 API 复现其行为（跳过仅装饰性的系统菜单项调整）。
+> - **焦点死区**：offscreen 在窗口 show 时会激活它，但模态对话框关闭后不会重新激活父窗口，此后 `setFocus()` 静默失效、无 ref 的键盘操作无处投递。守卫在活动的瞬态窗口隐藏时重新激活其父窗口。
+
 自定义命令（`registerCommand`/`qt_app_commands`/可用性拒绝路径）的专项验证：
 
 ```bash

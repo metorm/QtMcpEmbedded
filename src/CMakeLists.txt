@@ -2,6 +2,8 @@ add_library(QtMcpEmbedded STATIC
     QtMcp.h
     QtMcp.cpp
     core/ToolError.h
+    core/HeadlessCompat.h
+    core/HeadlessCompat.cpp
     core/RefRegistry.h
     core/RefRegistry.cpp
     core/ProbeServer.h
@@ -46,6 +48,12 @@ target_link_libraries(QtMcpEmbedded
     PUBLIC
         Qt${QT_VERSION_MAJOR}::Widgets
         Qt${QT_VERSION_MAJOR}::Network
+    PRIVATE
+        # QPA headers (qpa/qwindowsysteminterface.h) for the headless window
+        # activation workaround in core/HeadlessCompat.cpp. Private headers
+        # ship with standard Qt desktop installs; without them the workaround
+        # degrades gracefully (see __has_include guard).
+        Qt${QT_VERSION_MAJOR}::GuiPrivate
 )
 
 if(MSVC)

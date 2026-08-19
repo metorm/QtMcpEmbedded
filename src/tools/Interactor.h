@@ -3,6 +3,7 @@
 
 #include <QJsonObject>
 #include <QPoint>
+#include <QPointer>
 #include <QString>
 #include <QStringList>
 
@@ -63,6 +64,13 @@ private:
                                     const QString &propertyName, const QJsonValue &value);
 
     RefRegistry &m_registry;
+    /// Last widget the probe explicitly focused (click/clickTreeItem).
+    /// QApplication::focusWidget() returns null when no window is active —
+    /// reachable on headless platforms even with the HeadlessCompat
+    /// workarounds (e.g. before any window was shown) — so focus-less tools
+    /// (qt_key_press without ref) fall back to this. QPointer: cleared
+    /// automatically when the widget is destroyed.
+    QPointer<QWidget> m_lastFocusTarget;
 };
 
 } // namespace QtMcp

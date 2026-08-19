@@ -6,6 +6,9 @@
 # 未设置 QT_MCP_PROBE=1 环境变量时 install() 是零开销 no-op。
 
 QT += widgets network
+# QPA 头（qpa/qwindowsysteminterface.h）供 HeadlessCompat 的离屏窗口激活
+# 变通使用；标准 Qt 桌面安装自带私有头，缺失时代码经 __has_include 优雅降级
+QT += gui-private
 CONFIG += c++17
 
 # 两个日志缓冲区容量：QTMCP_HOST_LOG_CAPACITY = qt_host_messages 暂存区
@@ -24,6 +27,7 @@ win32-msvc: QMAKE_CXXFLAGS += /utf-8
 
 HEADERS += \
     $$QTMCP_ROOT/src/QtMcp.h \
+    $$QTMCP_ROOT/src/core/HeadlessCompat.h \
     $$QTMCP_ROOT/src/core/ProbeServer.h \
     $$QTMCP_ROOT/src/core/RefRegistry.h \
     $$QTMCP_ROOT/src/core/ToolError.h \
@@ -41,6 +45,7 @@ HEADERS += \
 
 SOURCES += \
     $$QTMCP_ROOT/src/QtMcp.cpp \
+    $$QTMCP_ROOT/src/core/HeadlessCompat.cpp \
     $$QTMCP_ROOT/src/core/ProbeServer.cpp \
     $$QTMCP_ROOT/src/core/RefRegistry.cpp \
     $$QTMCP_ROOT/src/protocol/JsonRpc.cpp \

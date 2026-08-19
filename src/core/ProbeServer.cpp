@@ -7,6 +7,7 @@
 #include <QUrl>
 
 #include "ToolError.h"
+#include "HeadlessCompat.h"
 #include "../tools/HostLog.h"
 #include "../tools/MessageLog.h"
 #include "../transport/SseStream.h"
@@ -72,6 +73,7 @@ ProbeServer::ProbeServer(QObject *parent)
 
     MessageLog::instance().install();
     HostLog::instance().setEnabled(true);
+    HeadlessCompat::installIfNeeded(this);
     registerTools();
 
     connect(m_http, &HttpServer::requestReceived, this, &ProbeServer::onHttpRequest);
