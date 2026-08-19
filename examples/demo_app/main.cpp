@@ -10,6 +10,8 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QLCDNumber>
 #include <QLabel>
 #include <QLineEdit>
@@ -102,9 +104,60 @@ public:
 class DemoMainWindow : public QMainWindow
 {
 public:
-    using QMainWindow::QMainWindow;
+    explicit DemoMainWindow(QWidget *parent = nullptr)
+        : QMainWindow(parent)
+    {
+        registerCommands();
+    }
 
     void setDirty(bool dirty) { m_dirty = dirty; }
+
+    /// Host-defined MCP commands. Called from the constructor — before the UI
+    /// is built — so widget lookup is deferred to invocation time via
+    /// findChild(). Handlers/availability checks capture `this`; the context
+    /// argument unregisters the commands automatically on destruction.
+    void registerCommands()
+    {
+        QtMcp::registerCommand(
+            QStringLiteral("demo_status"),
+            QStringLiteral("Return the demo app's current status: the statusLabel "
+                           "text and the name field contents."),
+            QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}},
+            [this](const QJsonObject &) -> QtMcp::CommandResult {
+                auto *status = findChild<QLabel *>(QStringLiteral("statusLabel"));
+                auto *name = findChild<QLineEdit *>(QStringLiteral("nameEdit"));
+                return QtMcp::CommandResult::ok(QJsonObject{
+                    {QStringLiteral("status"), status ? status->text() : QString()},
+                    {QStringLiteral("name"), name ? name->text() : QString()},
+                });
+            },
+            {}, this);
+
+        QtMcp::registerCommand(
+            QStringLiteral("demo_apply_and_check"),
+            QStringLiteral("Trigger applyButton and return the resulting statusLabel "
+                           "text. Requires the 'Unlock feature' checkbox (unlockCheck) "
+                           "to be checked first."),
+            QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}},
+            [this](const QJsonObject &) -> QtMcp::CommandResult {
+                auto *apply = findChild<QPushButton *>(QStringLiteral("applyButton"));
+                auto *status = findChild<QLabel *>(QStringLiteral("statusLabel"));
+                if (!apply || !status)
+                    return QtMcp::CommandResult::error(
+                        QStringLiteral("demo widgets not found"));
+                apply->click();
+                return QtMcp::CommandResult::ok(
+                    QJsonObject{{QStringLiteral("status"), status->text()}});
+            },
+            [this]() -> QString {
+                auto *unlock = findChild<QCheckBox *>(QStringLiteral("unlockCheck"));
+                if (!unlock || !unlock->isChecked())
+                    return QStringLiteral("unlockCheck is not checked; check the "
+                                          "'Unlock feature' checkbox first");
+                return QString();
+            },
+            this);
+    }
 
 protected:
     void closeEvent(QCloseEvent *event) override
@@ -144,7 +197,33 @@ int main(int argc, char *argv[])
         "warnButton opens a modal QMessageBox. Tab 'Views' requires nameEdit to be "
         "non-empty (the switch is rejected otherwise); itemList selection drives "
         "listDetailLabel; itemTable cells sum into sumLabel. Quitting with unsaved "
-        "changes asks Save/Discard/Cancel.");
+        "changes asks Save/Discard/Cancel. Custom commands: demo_status (current status "
+        "text), demo_apply_and_check (apply + readback; needs unlockCheck checked), "
+        "demo_echo (echoes its text argument) — "
+        "query qt_app_commands for their live availability.");
+    // Two-phase startup: assemble the probe now, open the port only after the
+    // window exists and its custom commands are registered, so clients always
+    // see the complete tool list on first connect.
+    mcpOptions.autoStart = false;
+
+    // Registered BEFORE install(): exercises the pending-queue path — the
+    // command is staged now and flushed into the tool registry by install().
+    QtMcp::registerCommand(
+        QStringLiteral("demo_echo"),
+        QStringLiteral("Echo the given 'text' argument back. Registered before "
+                       "install() to demonstrate the pending-queue path."),
+        QJsonObject{
+            {QStringLiteral("type"), QStringLiteral("object")},
+            {QStringLiteral("properties"),
+             QJsonObject{{QStringLiteral("text"),
+                          QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}}}}},
+            {QStringLiteral("required"), QJsonArray{QStringLiteral("text")}},
+        },
+        [](const QJsonObject &args) -> QtMcp::CommandResult {
+            return QtMcp::CommandResult::ok(QJsonObject{
+                {QStringLiteral("echo"), args.value(QStringLiteral("text")).toString()}});
+        });
+
     QtMcp::install(mcpOptions);
     QtMcp::postMessage(QStringLiteral("demo_app started"));
 
@@ -499,6 +578,9 @@ int main(int argc, char *argv[])
 
     window.resize(800, 640);
     window.show();
+
+    // All commands are registered (DemoMainWindow ctor) — open the MCP port.
+    QtMcp::startServer();
 
     return app.exec();
 }

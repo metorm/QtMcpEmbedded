@@ -1,5 +1,6 @@
 #include "ProbeServer.h"
 
+#include <QDebug>
 #include <QHostAddress>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -84,6 +85,55 @@ bool ProbeServer::start(const QHostAddress &address, quint16 port)
 void ProbeServer::setHostDescription(const QString &appName, const QString &instructions)
 {
     m_dispatcher.setHostDescription(appName, instructions);
+}
+
+bool ProbeServer::registerHostCommand(const QString &name, const QString &description,
+                                      const QJsonObject &inputSchema,
+                                      ToolRegistry::Handler handler,
+                                      std::function<QString()> availability)
+{
+    if (m_tools.hasTool(name)) {
+        qWarning("QtMcp: refusing to register command '%s': name already in use",
+                 qPrintable(name));
+        return false;
+    }
+
+    // Enforce availability on every invocation: a non-empty reason fails the
+    // call with isError before the host handler runs.
+    ToolRegistry::Handler guarded =
+        [name, handler = std::move(handler), availability](const QJsonObject &args) -> ToolResult {
+            if (availability) {
+                const QString reason = availability();
+                if (!reason.isEmpty()) {
+                    ToolResult denied = ToolResult::fromData(QJsonObject{
+                        {QStringLiteral("error"),
+                         QStringLiteral("Command '%1' is not available now: %2")
+                             .arg(name, reason)},
+                    });
+                    denied.isError = true;
+                    return denied;
+                }
+            }
+            return handler(args);
+        };
+
+    m_tools.registerTool(name, description, inputSchema, std::move(guarded));
+    HostCommand command;
+    command.description = description;
+    command.availability = std::move(availability);
+    m_hostCommands.insert(name, command);
+    m_hostOrder.append(name);
+    return true;
+}
+
+bool ProbeServer::unregisterHostCommand(const QString &name)
+{
+    if (!m_hostCommands.contains(name))
+        return false;
+    m_hostCommands.remove(name);
+    m_hostOrder.removeAll(name);
+    m_tools.unregister(name);
+    return true;
 }
 
 void ProbeServer::onHttpRequest(const QtMcp::HttpRequest &request,
@@ -235,6 +285,37 @@ void ProbeServer::registerTools()
             // details are in the payload — agent frameworks key on isError.
             batchResult.isError = !failedAt.isNull();
             return batchResult;
+        });
+
+    // Snapshot of host-registered custom commands with live availability, so
+    // agents can ask "what can I run right now, and why not" before planning
+    // instead of probing by trial and error.
+    m_tools.registerTool(
+        QStringLiteral("qt_app_commands"),
+        QStringLiteral("List the host application's custom commands (registered via "
+                       "QtMcp::registerCommand) with live availability. Each entry: "
+                       "{name, description, available, reason}; 'reason' explains why "
+                       "a command cannot run right now. Custom commands also enforce "
+                       "availability at call time."),
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}},
+        [this](const QJsonObject &) -> ToolResult {
+            QJsonArray commands;
+            for (const QString &name : m_hostOrder) {
+                const HostCommand &command = m_hostCommands[name];
+                QString reason;
+                if (command.availability)
+                    reason = command.availability();
+                commands.append(QJsonObject{
+                    {QStringLiteral("name"), name},
+                    {QStringLiteral("description"), command.description},
+                    {QStringLiteral("available"), reason.isEmpty()},
+                    {QStringLiteral("reason"), reason},
+                });
+            }
+            return ToolResult::fromData(QJsonObject{
+                {QStringLiteral("commands"), commands},
+                {QStringLiteral("count"), int(commands.size())},
+            });
         });
 }
 

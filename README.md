@@ -44,6 +44,70 @@ opts.instructions = "主流程：先…再…；重要控件：objectName xxx �
 QtMcp::install(opts);
 ```
 
+### 两阶段启动
+
+`install()` 默认（`autoStart=true`）装配并立即监听端口，一行接入的行为不变。
+要写自定义命令的应用建议改用两阶段：`install()` 只装配不监听，命令注册完毕后
+`startServer()` 才开服——MCP client 首次连接拿到的就是完整工具表，规避了
+"client 只拉一次 tools/list 就缓存"的问题：
+
+```cpp
+QtMcp::InstallOptions opts;
+opts.autoStart = false;            // 先不开服
+QtMcp::install(opts);
+
+MainWindow w;                      // 对象图就位；registerCommands() 在构造函数里调用
+w.show();
+
+QtMcp::startServer();              // 注册完毕，开服（幂等）
+```
+
+开服之后再注册的命令仍然合法，下次 `tools/list` 拉取即可见——但多数 client
+会缓存首次的工具列表，懒加载插件等场景由宿主权衡。
+
+### 自定义命令（registerCommand）
+
+把"界面操作繁琐但高频"的功能直接挂成 MCP 工具，与内置 `qt_*` 工具并列：
+
+```cpp
+void MainWindow::registerCommands()   // 约定：主窗体成员函数，构造函数末尾调用
+{
+    QtMcp::registerCommand(
+        "sim_start",
+        "启动仿真。前置条件：已加载工程。",
+        QJsonObject{{"type", "object"}},          // inputSchema，与内置工具同风格
+        [this](const QJsonObject &args) -> QtMcp::CommandResult {
+            m_sim->start();
+            return QtMcp::CommandResult::ok({{"started", true}});
+        },
+        [this]() -> QString {                     // 可用性检查（可选）
+            return m_project ? QString() : QStringLiteral("no project loaded");
+        },
+        this);                                    // context：销毁时自动注销（可选）
+}
+```
+
+- `CommandResult`：`data`（JSON，序列化为文本返回给 AI）+ `isError`；
+  工厂 `CommandResult::ok(data)` / `CommandResult::error(message)`。
+- `AvailabilityCheck` 返回空串 = 可执行；返回非空串 = 不可执行，串内容即给 AI 的原因。
+- 命名规则：禁止 `qt_` 前缀（保留给内置工具），禁止与已有工具/命令重名；
+  违规返回 `false` 并 `qWarning`。
+- 注册时机：`install()` 之前调用进 pending 队列（线程安全），install 时灌入；
+  install 之后直接进工具注册表（GUI 线程同步，其他线程排队投递）。
+  未设 `QT_MCP_PROBE=1` 时全部 no-op。
+- 生命周期：`context` 语义同 `QObject::connect`——context 销毁时自动注销该命令，
+  lambda 捕获 `this` 不会悬垂。也可手工 `QtMcp::unregisterCommand(name)`。
+
+**可用性的三层表达**：① 调用时强制检查——`tools/call` 到达时先跑
+`AvailabilityCheck`，非空原因 → `isError` + `"Command '<name>' is not available
+now: <reason>"`，AI 必然收到原因；② `qt_app_commands` 状态工具——返回所有自定义命令的
+`{name, description, available, reason}` 快照，AI 可在规划阶段先查，避免试错；
+③ 在 description 里写明前置条件（约定，不强制）。
+
+**线程约定**：handler 与可用性检查都运行在宿主 GUI 线程的事件循环里，可直接读写
+控件状态。耗时任务不要在 handler 里同步执行（会冻结界面和 MCP）——启动后台任务后
+立即返回，进度通过 `QtMcp::postMessage()` 上报，AI 用 `qt_host_messages` 轮询。
+
 宿主还可以主动向 agent 推送运行状态（可选，不调用则 `qt_host_messages` 恒为空）：
 
 ```cpp
@@ -71,7 +135,7 @@ CMake `-DQTMCP_HOST_LOG_CAPACITY=N`，qmake `QTMCP_HOST_LOG_CAPACITY=N`。
 
 注意：宿主程序退出时 MCP server 随之关闭，连接断开属于正常终止。
 
-## 工具一览（20 个）
+## 工具一览（21 个）
 
 | 工具 | 说明 |
 |---|---|
@@ -93,6 +157,7 @@ CMake `-DQTMCP_HOST_LOG_CAPACITY=N`，qmake `QTMCP_HOST_LOG_CAPACITY=N`。
 | `qt_batch` | 一次往返顺序执行多步，失败即停 |
 | `qt_debug_message` | 读取 Qt 内部消息（qDebug/qWarning 等）环形缓冲 |
 | `qt_host_messages` | 读取宿主通过 `QtMcp::postMessage()` 主动推送的消息（读后清空暂存区，不会重复送达；宿主不推送则恒为空） |
+| `qt_app_commands` | 宿主自定义命令（`QtMcp::registerCommand` 注册）快照：每条 `{name, description, available, reason}`，可用性为实时评估 |
 
 行为约定：操作类工具采用**异步事件投递**（不会在模态 `exec()` 上死锁）；对隐藏/禁用/被模态阻断的目标**快速失败**并给出原因（`force=true` 可绕过）；ref 全局单调编号，跨 snapshot 稳定，绝不静默重绑（包括宿主分配器复用已销毁控件地址的情形：旧 ref 一律明确报错，不会指向新控件）。
 
@@ -139,6 +204,12 @@ cd client && uv sync && uv run python verify.py
 ```
 
 `verify.py` 只依赖 MCP 接口、不依赖实现语言，可直接复用于验证任何实现了同一工具方言的探针。注意：脚本最后会让 demo 走"退出→保存确认→Discard"流程自行退出，属预期行为。
+
+自定义命令（`registerCommand`/`qt_app_commands`/可用性拒绝路径）的专项验证：
+
+```bash
+uv run python verify_commands.py   # 同样要求 demo_app 已以 QT_MCP_PROBE=1 启动；不会退出 demo
+```
 
 ## 仓库结构
 

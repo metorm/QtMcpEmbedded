@@ -20,9 +20,11 @@ qt-mcp/
 tmp/
 build_demo.bat
 client/Settings.ini
+examples/qt-ads/Settings.ini
 .cache/
 examples/qt-ads/shots/
 
 # Private-host embedding workspace (guide/patch/test scripts for a proprietary
 # Qt app) — deliberately not committed for now
 examples/SRMStudioX/
+examples/SRMPostAnimator/

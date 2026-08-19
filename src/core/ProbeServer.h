@@ -31,9 +31,25 @@ public:
     /// response's `instructions` field. Call before start().
     void setHostDescription(const QString &appName, const QString &instructions);
 
+    /// Registers a host-defined custom command. `handler` is invoked only
+    /// after `availability` (if given) reports the command as executable;
+    /// otherwise the call fails with isError and the reason text. Refuses
+    /// (false + qWarning) when the name collides with an existing tool.
+    /// Call on the GUI thread.
+    bool registerHostCommand(const QString &name, const QString &description,
+                             const QJsonObject &inputSchema,
+                             ToolRegistry::Handler handler,
+                             std::function<QString()> availability = {});
+    bool unregisterHostCommand(const QString &name);
+
 private:
     void onHttpRequest(const QtMcp::HttpRequest &request, QtMcp::HttpConnection *connection);
     void registerTools();
+
+    struct HostCommand {
+        QString description;
+        std::function<QString()> availability;
+    };
 
     RefRegistry m_registry;
     ToolRegistry m_tools;
@@ -43,6 +59,8 @@ private:
     Introspector m_introspector;
     Interactor m_interactor;
     Screenshotter m_screenshotter;
+    QHash<QString, HostCommand> m_hostCommands;
+    QStringList m_hostOrder; // stable listing order for qt_app_commands
 };
 
 } // namespace QtMcp

@@ -43,6 +43,9 @@ public:
 
     bool hasTool(const QString &name) const { return m_tools.contains(name); }
 
+    /// Removes a tool. Returns false if no tool with that name exists.
+    bool unregister(const QString &name);
+
     /// Array of {name, description, inputSchema} for tools/list.
     QJsonArray toolList() const;
 

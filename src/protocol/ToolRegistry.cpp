@@ -16,6 +16,15 @@ void ToolRegistry::registerTool(const QString &name, const QString &description,
     m_tools.insert(name, tool);
 }
 
+bool ToolRegistry::unregister(const QString &name)
+{
+    if (!m_tools.contains(name))
+        return false;
+    m_tools.remove(name);
+    m_order.removeAll(name);
+    return true;
+}
+
 QJsonArray ToolRegistry::toolList() const
 {
     QJsonArray list;
