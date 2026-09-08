@@ -13,16 +13,22 @@
   ],
   "buildPresets": [
     {
-      "name": "local-debug",
+      "name": "dbg",
       "displayName": "本机 Debug",
       "configurePreset": "local",
       "configuration": "Debug"
     },
     {
-      "name": "local-release",
+      "name": "rls",
       "displayName": "本机 Release",
       "configurePreset": "local",
       "configuration": "Release"
+    },
+    {
+      "name": "rls-dbg",
+      "displayName": "本机 RelWithDebInfo",
+      "configurePreset": "local",
+      "configuration": "RelWithDebInfo"
     }
   ]
 }
