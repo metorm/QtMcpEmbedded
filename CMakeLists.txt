@@ -22,8 +22,30 @@ if(MSVC)
     add_compile_options(/utf-8)
 endif()
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network)
+# Prefer the Qt major version the host project has already imported. As an
+# add_subdirectory() subproject the parent resolves Qt itself (e.g. through
+# Qt5_DIR); the previous NAMES-based find_package(QT ...) here could not see
+# that hint (it only honours QT_DIR) and could select a different major version
+# than the host, mixing two Qt runtimes in one build. A host may import only
+# some components (srmsimulator imports Core + Widgets, without Network), so the
+# major version is probed at component level and the missing components are
+# completed within that same version. Standalone builds have no host targets and
+# fall back to a versioned find_package (Qt6 preferred, then Qt5).
+if(TARGET Qt5::Widgets OR TARGET Qt5::Core)
+    find_package(Qt5 REQUIRED COMPONENTS Widgets Network)
+    set(QT_VERSION_MAJOR 5)
+elseif(TARGET Qt6::Widgets OR TARGET Qt6::Core)
+    find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
+    set(QT_VERSION_MAJOR 6)
+else()
+    find_package(Qt6 QUIET COMPONENTS Widgets Network)
+    if(Qt6_FOUND)
+        set(QT_VERSION_MAJOR 6)
+    else()
+        find_package(Qt5 REQUIRED COMPONENTS Widgets Network)
+        set(QT_VERSION_MAJOR 5)
+    endif()
+endif()
 
 add_subdirectory(src)
 
