@@ -247,8 +247,15 @@ bool install(const InstallOptions &options)
     const int portEnv = qEnvironmentVariableIntValue("QT_MCP_PORT", &portOk);
     const quint16 port = portOk ? quint16(portEnv) : quint16(DEFAULT_PORT);
 
+    const QString appName = options.appName.isEmpty()
+        ? qEnvironmentVariable("QT_MCP_APP_NAME")
+        : options.appName;
+    const QString instructions = options.instructions.isEmpty()
+        ? qEnvironmentVariable("QT_MCP_INSTRUCTIONS")
+        : options.instructions;
+
     auto *server = new ProbeServer(app);
-    server->setHostDescription(options.appName, options.instructions);
+    server->setHostDescription(appName, instructions);
 
     QList<PendingCommand> staged;
     {

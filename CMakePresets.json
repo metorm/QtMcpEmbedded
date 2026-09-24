@@ -1,8 +1,8 @@
 {
-  "version": 6,
+  "version": 2,
   "cmakeMinimumRequired": {
     "major": 3,
-    "minor": 25,
+    "minor": 20,
     "patch": 0
   },
   "configurePresets": [
@@ -20,9 +20,27 @@
       "displayName": "Ninja Multi-Config",
       "description": "Qt 路径取自环境（CMAKE_PREFIX_PATH）。本机覆盖请用 CMakeUserPresets.json 里的 local preset。",
       "inherits": "base"
+    },
+    {
+      "hidden": true,
+      "name": "Qt",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "$penv{QTDIR}"
+      },
+      "vendor": {
+        "qt-project.org/Qt": {
+          "checksum": "wVa86FgEkvdCTVp1/nxvrkaemJc="
+        }
+      }
     }
   ],
   "buildPresets": [
+    {
+      "name": "default",
+      "displayName": "Default",
+      "configurePreset": "default",
+      "configuration": "Debug"
+    },
     {
       "name": "debug",
       "displayName": "Debug",
@@ -34,6 +52,21 @@
       "displayName": "Release",
       "configurePreset": "default",
       "configuration": "Release"
+    },
+    {
+      "name": "Qt-Debug",
+      "displayName": "Qt-Debug",
+      "configurePreset": "Qt-Debug"
+    },
+    {
+      "name": "Qt-Release",
+      "displayName": "Qt-Release",
+      "configurePreset": "Qt-Release"
     }
-  ]
+  ],
+  "vendor": {
+    "qt-project.org/Presets": {
+      "checksum": "SbNqOU4nt7ELTyPJjLvsa7XtvmE="
+    }
+  }
 }

@@ -5,6 +5,7 @@
 #include <QString>
 #include <QStringList>
 
+class QObject;
 class QWidget;
 
 namespace QtMcp {

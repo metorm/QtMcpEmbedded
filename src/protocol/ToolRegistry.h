@@ -1,6 +1,7 @@
 #ifndef QTMCP_TOOLREGISTRY_H
 #define QTMCP_TOOLREGISTRY_H
 
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>

@@ -1,4 +1,4 @@
-add_library(QtMcpEmbedded STATIC
+set(_qtmcp_common_sources
     QtMcp.h
     QtMcp.cpp
     core/ToolError.h
@@ -32,6 +32,8 @@ add_library(QtMcpEmbedded STATIC
     tools/HostLog.cpp
 )
 
+add_library(QtMcpEmbedded STATIC ${_qtmcp_common_sources})
+
 target_include_directories(QtMcpEmbedded PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Capacity of the QtMcp::postMessage() staging ring buffer (qt_host_messages).
@@ -60,4 +62,41 @@ if(MSVC)
     target_compile_options(QtMcpEmbedded PRIVATE /W3 /utf-8)
 else()
     target_compile_options(QtMcpEmbedded PRIVATE -Wall -Wextra)
+endif()
+
+if(QTMCP_BUILD_PLUGIN)
+    add_library(qtmcp MODULE
+        ${_qtmcp_common_sources}
+        plugin/QtMcpPlugin.h
+        plugin/QtMcpPlugin.cpp
+        plugin/qtmcp.json
+    )
+
+    target_include_directories(qtmcp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(qtmcp
+        PRIVATE QTMCP_HOST_LOG_CAPACITY=${QTMCP_HOST_LOG_CAPACITY}
+                QTMCP_MESSAGE_LOG_CAPACITY=${QTMCP_MESSAGE_LOG_CAPACITY})
+
+    target_link_libraries(qtmcp
+        PRIVATE
+            Qt${QT_VERSION_MAJOR}::Widgets
+            Qt${QT_VERSION_MAJOR}::Network
+            Qt${QT_VERSION_MAJOR}::GuiPrivate
+    )
+
+    if(MSVC)
+        target_compile_options(qtmcp PRIVATE /W3 /utf-8)
+    else()
+        target_compile_options(qtmcp PRIVATE -Wall -Wextra)
+    endif()
+
+    set_target_properties(qtmcp PROPERTIES
+        DEBUG_POSTFIX "d"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins/generic"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins/generic"
+        LIBRARY_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/plugins/generic"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/plugins/generic"
+        LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/plugins/generic"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/plugins/generic"
+    )
 endif()

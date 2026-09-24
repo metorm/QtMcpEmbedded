@@ -1791,7 +1791,15 @@ void Interactor::registerTools(ToolRegistry &registry)
                  {QStringLiteral("method_name"),
                   QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}}},
                  {QStringLiteral("args"),
-                  QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
+                  QJsonObject{
+                      {QStringLiteral("type"), QStringLiteral("array")},
+                      {QStringLiteral("items"),
+                       QJsonObject{
+                           {QStringLiteral("description"),
+                            QStringLiteral("Argument value (primitive type: string, number, bool, etc.)")}}},
+                      {QStringLiteral("description"),
+                       QStringLiteral("Arguments to pass to the slot (up to 4 arguments).")},
+                  }},
              }},
             {QStringLiteral("required"),
              QJsonArray{QStringLiteral("ref"), QStringLiteral("method_name")}},
