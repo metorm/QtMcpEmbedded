@@ -20,18 +20,6 @@
       "displayName": "Ninja Multi-Config",
       "description": "Qt 路径取自环境（CMAKE_PREFIX_PATH）。本机覆盖请用 CMakeUserPresets.json 里的 local preset。",
       "inherits": "base"
-    },
-    {
-      "hidden": true,
-      "name": "Qt",
-      "cacheVariables": {
-        "CMAKE_PREFIX_PATH": "$penv{QTDIR}"
-      },
-      "vendor": {
-        "qt-project.org/Qt": {
-          "checksum": "wVa86FgEkvdCTVp1/nxvrkaemJc="
-        }
-      }
     }
   ],
   "buildPresets": [
@@ -52,21 +40,6 @@
       "displayName": "Release",
       "configurePreset": "default",
       "configuration": "Release"
-    },
-    {
-      "name": "Qt-Debug",
-      "displayName": "Qt-Debug",
-      "configurePreset": "Qt-Debug"
-    },
-    {
-      "name": "Qt-Release",
-      "displayName": "Qt-Release",
-      "configurePreset": "Qt-Release"
     }
-  ],
-  "vendor": {
-    "qt-project.org/Presets": {
-      "checksum": "SbNqOU4nt7ELTyPJjLvsa7XtvmE="
-    }
-  }
+  ]
 }
